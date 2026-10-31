@@ -13,6 +13,19 @@ import {
 import { contentHash } from '../sync/identity.js';
 /** @param {any} e */
 const filePath = (e) => e.folder + '/' + e.localId + '.md';
+/** Only bounded representation failures are skippable; transport errors remain retryable.
+ * @param {any} cause */
+const invalidFileRead = (cause) =>
+  cause?.code === 'ERR_ENCODING_INVALID_ENCODED_DATA' ||
+  cause?.message === 'Working-file content exceeds bound';
+/** An accepted editor body stays durable until explicit reviewed conflict resolution.
+ * @param {any} entry @param {any} document */
+function holdEdit(entry, document) {
+  entry.recoveryEdit = { document };
+  entry.status = 'recovery_pending';
+  entry.error =
+    'Saved editor text is retained. Restore access and a valid working copy, then sync to review the conflict.';
+}
 /** @param {any} connection @param {any} entry */
 function allowed(connection, entry) {
   return entry.origin === 'selected'
@@ -161,26 +174,32 @@ export async function advanceNotionSync(
       if (result === 'changed') {
         if (p.purpose === 'conflict-snapshot')
           throw Error('Conflict evidence changed; inspect working files');
-        const local = await client.latestFile(filePath(entry));
-        const remote = entry.notionId ? await readRemote(entry, credential) : null;
-        if (remote?.supported && local) {
-          const retained =
-            p.interveningFileId && p.interveningFileId !== local.id
-              ? new TextDecoder('utf-8', { fatal: true }).decode(
-                  await client.readFileBytes(p.interveningFileId)
-                )
-              : local.content;
-          conflict(
-            m,
-            entry,
-            remote.document,
-            decodeDocument(retained),
-            decodeDocument(local.content)
-          );
-        } else {
-          entry.status = 'edit_stale';
-          entry.error = 'Working file changed before delivery';
+        if (p.purpose === 'edit') {
+          holdEdit(entry, p.document);
+          delete m.queue[entry.localId];
           finish(m, entry);
+        } else {
+          const local = await client.latestFile(filePath(entry));
+          const remote = entry.notionId ? await readRemote(entry, credential) : null;
+          if (remote?.supported && local) {
+            const retained =
+              p.interveningFileId && p.interveningFileId !== local.id
+                ? new TextDecoder('utf-8', { fatal: true }).decode(
+                    await client.readFileBytes(p.interveningFileId)
+                  )
+                : local.content;
+            conflict(
+              m,
+              entry,
+              remote.document,
+              decodeDocument(retained),
+              decodeDocument(local.content)
+            );
+          } else {
+            entry.status = 'edit_stale';
+            entry.error = 'Working file changed before delivery';
+            finish(m, entry);
+          }
         }
       } else if (result === 'verified') {
         if (p.purpose === 'edit') {
@@ -351,11 +370,21 @@ export async function advanceNotionSync(
       const id = Object.keys(m.queue)[0],
         edit = m.queue[id],
         e = m.entries[id];
-      const current = await client.latestFile(filePath(e));
-      if ((current?.id ?? null) !== edit.expectedRevision) {
-        e.status = 'edit_stale';
-        e.error = 'A newer Fulcra edit exists; reload before saving';
+      let current;
+      try {
+        current = await client.latestFile(filePath(e));
+      } catch (cause) {
+        if (!invalidFileRead(cause)) throw cause;
+        holdEdit(e, edit.document);
         delete m.queue[id];
+        finish(m, e);
+      }
+      if (e.recoveryEdit) {
+        /* The accepted text is held until valid bytes can be reviewed. */
+      } else if ((current?.id ?? null) !== edit.expectedRevision) {
+        holdEdit(e, edit.document);
+        delete m.queue[id];
+        finish(m, e);
       } else fileIntent(m, e, edit.document, current, 'edit');
       keepActive = !!m.pending;
     } else if (m.scanRequested || m.scan) {
@@ -424,9 +453,16 @@ export async function advanceNotionSync(
               warn('Mapped-page limit reached; extra working files were skipped');
               continue;
             }
-            const body = await client.latestFile(folder + '/' + name);
+            let body;
             try {
-              decodeDocument(body.content);
+              body = await client.latestFile(folder + '/' + name);
+            } catch (cause) {
+              if (!invalidFileRead(cause)) throw cause;
+              warn('An invalid working-file document was skipped');
+              continue;
+            }
+            try {
+              decodeDocument(body?.content);
             } catch {
               warn('An invalid working-file document was skipped');
               continue;
@@ -468,68 +504,79 @@ export async function advanceNotionSync(
       } else {
         const remote = await readRemote(entry, credential);
         if (!remote.supported) {
-          entry.status = 'unsupported';
+          if (entry.recoveryEdit) holdEdit(entry, entry.recoveryEdit.document);
+          else entry.status = 'unsupported';
           entry.title = remote.document.title;
           finish(m, entry);
         } else {
           const local = file ? decodeDocument(file.content) : null;
-          const resolution = m.resolutions[id];
-          let decision = decideSync(entry.baseline ?? null, {
-            notion: remote.document,
-            fulcra: local
-          });
-          if (
-            entry.createdPending &&
-            remote.document.title === markerTitle(entry.localId) &&
-            remote.document.markdown === '' &&
-            !remote.document.archived &&
-            local
-          )
-            decision = 'push';
-          if (entry.status === 'conflict') {
-            const expectedCurrent = entry.conflict?.expectedCurrent;
-            if (
-              !expectedCurrent ||
-              expectedCurrent.notion !== documentHash(remote.document) ||
-              expectedCurrent.fulcra !== documentHash(local)
-            ) {
-              entry.status = 'pending';
-              decision = 'conflict';
-            } else decision = 'hold';
-          }
-          if (resolution) {
-            if (
-              local &&
-              resolution.conflictId === entry.conflict?.id &&
-              resolution.notion === documentHash(remote.document) &&
-              resolution.fulcra === documentHash(local)
-            )
-              decision = resolution.choice === 'notion' ? 'pull' : 'push';
-            delete m.resolutions[id];
-          }
-          if (decision === 'pull')
-            fileIntent(m, entry, remote.document, file, 'pull', {
-              notionDocument: remote.document
-            });
-          else if (decision === 'push') {
-            m.pending = {
-              kind: 'notion',
-              entryId: id,
-              phase: 'guard',
-              before: remote.document,
-              expected: remote.document,
-              desired: local,
-              sourceHash: documentHash(local)
-            };
-            entry.status = 'pending';
-          } else if (decision === 'conflict') {
-            if (entry.status !== 'conflict') conflict(m, entry, remote.document, local);
-            else finish(m, entry);
+          if (entry.recoveryEdit) {
+            if (local) {
+              conflict(m, entry, remote.document, entry.recoveryEdit.document, local);
+              delete entry.recoveryEdit;
+            } else {
+              holdEdit(entry, entry.recoveryEdit.document);
+              finish(m, entry);
+            }
           } else {
-            if (['noop', 'converge'].includes(decision))
-              converged(entry, remote.document, local, file);
-            else if (decision !== 'hold') entry.status = decision;
-            finish(m, entry);
+            const resolution = m.resolutions[id];
+            let decision = decideSync(entry.baseline ?? null, {
+              notion: remote.document,
+              fulcra: local
+            });
+            if (
+              entry.createdPending &&
+              remote.document.title === markerTitle(entry.localId) &&
+              remote.document.markdown === '' &&
+              !remote.document.archived &&
+              local
+            )
+              decision = 'push';
+            if (entry.status === 'conflict') {
+              const expectedCurrent = entry.conflict?.expectedCurrent;
+              if (
+                !expectedCurrent ||
+                expectedCurrent.notion !== documentHash(remote.document) ||
+                expectedCurrent.fulcra !== documentHash(local)
+              ) {
+                entry.status = 'pending';
+                decision = 'conflict';
+              } else decision = 'hold';
+            }
+            if (resolution) {
+              if (
+                local &&
+                resolution.conflictId === entry.conflict?.id &&
+                resolution.notion === documentHash(remote.document) &&
+                resolution.fulcra === documentHash(local)
+              )
+                decision = resolution.choice === 'notion' ? 'pull' : 'push';
+              delete m.resolutions[id];
+            }
+            if (decision === 'pull')
+              fileIntent(m, entry, remote.document, file, 'pull', {
+                notionDocument: remote.document
+              });
+            else if (decision === 'push') {
+              m.pending = {
+                kind: 'notion',
+                entryId: id,
+                phase: 'guard',
+                before: remote.document,
+                expected: remote.document,
+                desired: local,
+                sourceHash: documentHash(local)
+              };
+              entry.status = 'pending';
+            } else if (decision === 'conflict') {
+              if (entry.status !== 'conflict') conflict(m, entry, remote.document, local);
+              else finish(m, entry);
+            } else {
+              if (['noop', 'converge'].includes(decision))
+                converged(entry, remote.document, local, file);
+              else if (decision !== 'hold') entry.status = decision;
+              finish(m, entry);
+            }
           }
         }
       }
@@ -563,8 +610,11 @@ export async function advanceNotionSync(
           : 'Two-way sync retry pending; retained operation will be reconciled';
     if (status === 404 && currentEntryId) {
       const failed = m.entries[currentEntryId];
-      failed.status = 'inaccessible';
-      failed.error = 'Notion page is inaccessible; other mapped pages continue';
+      if (failed.recoveryEdit) holdEdit(failed, failed.recoveryEdit.document);
+      else {
+        failed.status = 'inaccessible';
+        failed.error = 'Notion page is inaccessible; other mapped pages continue';
+      }
       if (m.pending) failed.deferred = m.pending;
       finish(m, failed);
     } else if (status === 404 && m.scan === 'pages') {
@@ -573,13 +623,17 @@ export async function advanceNotionSync(
       m.scanCursor = null;
     } else if (
       currentEntryId &&
-      /^(Invalid working-file|Invalid document|Invalid archive|Invalid Markdown|Choose a title|Markdown exceeds)/.test(
-        message
-      )
+      (invalidFileRead(cause) ||
+        /^(Invalid working-file|Invalid document|Invalid archive|Invalid Markdown|Choose a title|Markdown exceeds)/.test(
+          message
+        ))
     ) {
       const failed = m.entries[currentEntryId];
-      failed.status = 'invalid';
-      failed.error = message;
+      if (failed.recoveryEdit) holdEdit(failed, failed.recoveryEdit.document);
+      else {
+        failed.status = 'invalid';
+        failed.error = message;
+      }
       if (m.pending) failed.deferred = m.pending;
       finish(m, failed);
     }

@@ -78,9 +78,20 @@ export function createDocumentService({
     if (!['current', 'notion', 'fulcra'].includes(view)) throw Error('Invalid conflict view');
     const m = await manifest(),
       e = selected(m, id);
-    const path = folder() + '/' + e.localId + '.md',
+    const path = folder() + '/' + e.localId + '.md';
+    let file;
+    try {
       file = await client.latestFile(path);
-    let document = file ? decodeDocument(file.content) : m.queue[e.localId]?.document;
+    } catch (cause) {
+      const invalid =
+        /** @type {any} */ (cause)?.code === 'ERR_ENCODING_INVALID_ENCODED_DATA' ||
+        (cause instanceof Error && cause.message === 'Working-file content exceeds bound');
+      if (!e.recoveryEdit || !invalid) throw cause;
+      file = null;
+    }
+    let document =
+      e.recoveryEdit?.document ??
+      (file ? decodeDocument(file.content) : m.queue[e.localId]?.document);
     if (!document) throw Error('Document is waiting for its first verified working copy');
     let expectedNotion = null;
     if (e.conflict) {
@@ -101,7 +112,7 @@ export function createDocumentService({
       document,
       path,
       revision: file?.id ?? null,
-      queued: !!m.queue[e.localId] || m.pending?.entryId === e.localId,
+      queued: !!m.queue[e.localId] || !!e.recoveryEdit || m.pending?.entryId === e.localId,
       status: m.queue[e.localId] ? 'queued' : e.status,
       conflict: e.conflict ? { id: e.conflict.id, detectedAt: e.conflict.detectedAt } : null,
       expectedNotion
@@ -159,6 +170,12 @@ export function createDocumentService({
       file = await client.latestFile(folder() + '/' + e.localId + '.md');
     if (!file || typeof input.expectedRevision !== 'string' || input.expectedRevision !== file.id)
       throw Error('Document changed: a newer working-file revision exists; reload before saving');
+    if (m.pending?.entryId === e.localId)
+      throw Error('Document is syncing; wait for it to finish and reload before saving');
+    if (e.recoveryEdit)
+      throw Error(
+        'A saved edit is retained for recovery; sync and review the conflict before editing'
+      );
     if (m.queue[e.localId]) throw Error('Document already has a queued edit; wait and reload');
     if (input.operation === 'resolve') {
       if (!['notion', 'fulcra'].includes(input.choice) || input.conflictId !== e.conflict?.id)
