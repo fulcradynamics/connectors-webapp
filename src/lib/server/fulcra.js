@@ -130,6 +130,46 @@ export class FulcraClient {
     const result = JSON.parse(text);
     return Array.isArray(result) ? result : result.records;
   }
+  /** Bounded exact-folder listing for editable working copies. @param {string} folder */
+  async listFiles(folder) {
+    const listing = await this.json(`input/v1/file_upload?path=${encodeURIComponent(folder)}`);
+    if (!Array.isArray(listing.files) || listing.files.length > 500)
+      throw Error('Working-file listing capacity exceeded');
+    return listing.files.filter(
+      (/** @type {any} */ f) => f.path === folder && f.state === 'uploaded'
+    );
+  }
+  /** Latest bytes and retained version IDs; historical byte matches are not current readback.
+   * @param {string} path */
+  async latestFile(path) {
+    const slash = path.lastIndexOf('/'),
+      parent = path.slice(0, slash) || '/',
+      name = path.slice(slash + 1);
+    const listing = await this.json(
+      `input/v1/file_upload?path=${encodeURIComponent(parent)}&name=${encodeURIComponent(name)}`
+    );
+    if (!Array.isArray(listing.files) || listing.files.length > 500)
+      throw Error('Working-file version capacity exceeded');
+    const versions = listing.files
+      .filter(
+        (/** @type {any} */ f) => f.path === parent && f.name === name && f.state === 'uploaded'
+      )
+      .sort(
+        (/** @type {any} */ a, /** @type {any} */ b) =>
+          Date.parse(b.created_at) - Date.parse(a.created_at) ||
+          String(b.id).localeCompare(String(a.id))
+      );
+    if (!versions.length) return null;
+    if (Number(versions[0].size) > 64 * 1024) throw Error('Working-file content exceeds bound');
+    const bytes = await this.readFileBytes(versions[0].id);
+    if (bytes.byteLength > 64 * 1024) throw Error('Working-file content exceeds bound');
+    return {
+      id: versions[0].id,
+      createdAt: versions[0].created_at,
+      content: new TextDecoder('utf-8', { fatal: true }).decode(bytes),
+      versions
+    };
+  }
   /** @param {string} path */
   async readFile(path) {
     const slash = path.lastIndexOf('/');
