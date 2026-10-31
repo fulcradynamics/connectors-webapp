@@ -87,3 +87,5 @@ Official references: [internal connections](https://developers.notion.com/guides
 Use **Archive page** in Fulcra or **Move to Trash** in Notion for recoverable removal. To bring it back, use **Restore page** in either service, then sync and refresh the document. Do not permanently delete a page during this workflow.
 
 Notion hides Markdown while a page is in Trash. The connector keeps the last verified body in the archived working file and reads the actual body again after restore. If you changed the hidden body before trashing it and then restore an older Fulcra copy, the connector retains a conflict for review instead of overwriting the newly visible text. A trashed page without a verified working copy is skipped until restored.
+
+**Sync now** discovers new children and queues every mapped page for reconciliation. **Sync this page now** prioritizes the open document. Refresh status after the worker has verified the result; a queued action is not a completed sync.

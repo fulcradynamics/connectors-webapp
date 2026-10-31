@@ -47,7 +47,7 @@ export async function loadManifest(store, connection, crypto) {
     pending: null,
     queue: {},
     resolutions: {},
-    priority: [],
+    priority: Object.keys(entries),
     index: 0,
     scan: 'pages',
     scanCursor: null,

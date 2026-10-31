@@ -150,7 +150,7 @@ export function createDocumentService({
           input.id,
           ...m.priority.filter((/** @type {string} */ id) => id !== input.id)
         ];
-      }
+      } else m.priority = [...new Set([...m.priority, ...Object.keys(m.entries)])];
       m.scanRequested = true;
       await save(m);
       return { queued: true };

@@ -179,3 +179,26 @@ it('uses the same preserved archived body when reviewing and resolving a conflic
     })
   ).toEqual({ id, queued: true });
 });
+it('queues every mapped page for an explicit full sync while retaining existing priorities', async () => {
+  const f = fixture(),
+    m = await loadManifest(f.store, f.connection, crypto);
+  m.entries[other] = {
+    localId: other,
+    notionId: other,
+    parentId: id,
+    origin: 'child',
+    status: 'synced'
+  };
+  m.priority = [other];
+  await saveManifest(f.store, f.connection, m, crypto);
+  await f.service.mutate({ operation: 'sync' });
+  const saved = await loadManifest(f.store, f.connection, crypto);
+  expect(saved.priority).toEqual([other, id]);
+  expect(saved.scanRequested).toBe(true);
+});
+
+it('initializes the first pass with every selected page ready to run', async () => {
+  const f = fixture();
+  const m = await loadManifest(f.store, f.connection, crypto);
+  expect(m.priority).toEqual([id]);
+});
