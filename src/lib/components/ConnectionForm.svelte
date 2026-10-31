@@ -103,7 +103,11 @@
       >Private key<textarea bind:value={privateKey} required autocomplete="off" spellcheck="false"
       ></textarea></label
     >{:else}<label
-      >{connector === 'garmin' ? 'Garmin Personal API key' : 'Read token / API key'}<input
+      >{connector === 'garmin'
+        ? 'Garmin Personal API key'
+        : connector === 'notion'
+          ? 'Internal connection API token'
+          : 'Read token / API key'}<input
         type="password"
         bind:value={token}
         required

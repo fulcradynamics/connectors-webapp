@@ -179,7 +179,7 @@ try {
         'Create GitHub fine-grained token',
         'https://github.com/settings/personal-access-tokens/new?name=Fulcra%20Connectors&metadata=read&issues=read&pull_requests=read'
       ],
-      notion: ['Open Notion connection console', 'https://www.notion.so/profile/integrations'],
+      notion: ['Open Notion connection console', 'https://app.notion.com/developers/connections'],
       slack: ['Open Slack app and token settings', 'https://api.slack.com/apps'],
       garmin: [
         'Create or manage Garmin Personal API key',
@@ -319,7 +319,7 @@ try {
       'Create GitHub fine-grained token',
       'https://github.com/settings/personal-access-tokens/new?name=Fulcra%20Connectors&metadata=read&issues=read&pull_requests=read'
     ],
-    ['notion', 'Open Notion connection console', 'https://www.notion.so/profile/integrations'],
+    ['notion', 'Open Notion connection console', 'https://app.notion.com/developers/connections'],
     ['slack', 'Open Slack app and token settings', 'https://api.slack.com/apps'],
     [
       'garmin',

@@ -4,6 +4,7 @@
   import { onMount, untrack } from 'svelte';
   import ConnectionForm from './ConnectionForm.svelte';
   import {
+    MAX_SELECTED_SOURCES,
     getConnectorSetup,
     setupDefaults,
     describeDestination,
@@ -44,6 +45,7 @@
   let creatingType = $state(false);
   let typeName = $state('');
   let typeDescription = $state('');
+  const sourcesReady = $derived(selected.length > 0 && selected.length <= MAX_SELECTED_SOURCES);
   const destinationReady = $derived(
     (mode === 'record' || !!folder.trim()) && (mode === 'file' || !!recordType)
   );
@@ -208,7 +210,7 @@
         class:active={step === i}
         aria-current={step === i ? 'step' : undefined}
         disabled={busy ||
-          (i > 0 && !selected.length) ||
+          (i > 0 && !sourcesReady) ||
           (i > 1 && !destinationReady) ||
           (i === 3 && !preview)}
         onclick={() => (step = i)}>{stage}</button
@@ -220,6 +222,7 @@
           <h3>3. Select {info.sourceLabel}</h3>
           <p>
             {info.sourceHelp} Only the IDs you select are collected. Discovery does not enable syncing.
+            Choose up to {MAX_SELECTED_SOURCES} per connection.
           </p>
           <button class="secondary" disabled={busy} onclick={discover}
             >{loaded
@@ -241,10 +244,16 @@
               No accessible {info.sourceLabel} were returned. Check the credential permissions and provider
               sharing settings.
             </p>{/if}
+          {#if loaded && !resources.length && info.sourceTroubleshooting}<p>
+              {info.sourceTroubleshooting}
+            </p>{/if}
+          {#if selected.length > MAX_SELECTED_SOURCES}<p role="alert" class="error">
+              Select at most {MAX_SELECTED_SOURCES} sources per connection.
+            </p>{/if}
           {#if selected.length && !resources.length}<p>
               {selected.length} sources saved. Rediscover to edit them.
             </p>{/if}
-          <button class="primary" disabled={busy || !selected.length} onclick={() => (step = 1)}
+          <button class="primary" disabled={busy || !sourcesReady} onclick={() => (step = 1)}
             >Continue to destination</button
           >
         </section>{:else if step === 1}<section class="stage">
@@ -408,7 +417,7 @@
           <button
             class="primary"
             disabled={busy ||
-              !selected.length ||
+              !sourcesReady ||
               !destinationReady ||
               Number(interval) < 60 ||
               Number(interval) > 86400 ||

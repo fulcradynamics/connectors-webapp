@@ -1,3 +1,4 @@
+import { MAX_SELECTED_SOURCES } from '../connectors/setup.js';
 import { canonical, contentHash } from './sync/identity.js';
 import { prepareOutput } from './sync/runner.js';
 import { unseal } from './secrets.js';
@@ -14,12 +15,13 @@ export function validateConfig(input, discovered, ownerId) {
   if (
     !Array.isArray(input.resources) ||
     input.resources.length < 1 ||
-    input.resources.length > 20 ||
     input.resources.some(
       (/** @type {any} */ id) => typeof id !== 'string' || !discovered.includes(id)
     )
   )
     throw new Error('Select discovered sources');
+  if (input.resources.length > MAX_SELECTED_SOURCES)
+    throw new Error(`Select at most ${MAX_SELECTED_SOURCES} sources per connection`);
   if (
     !Number.isInteger(input.intervalSeconds) ||
     input.intervalSeconds < 60 ||
