@@ -1,3 +1,4 @@
+import { prepareIndex, advanceIndex, indexStatusView } from './index.js';
 import { retainArchivedBody } from './archive-body.js';
 import { randomUUID } from 'node:crypto';
 import { nativeStore } from '../native/state.js';
@@ -41,6 +42,7 @@ function finish(m, entry) {
   if (m.index === 0) {
     m.lastCycle = new Date().toISOString();
     m.scan = 'pages';
+    m.indexCheckRequested = true;
   }
 }
 /** @param {any} m @param {any} entry @param {any} notion @param {any} fulcra @param {any} currentFulcra */
@@ -78,7 +80,15 @@ function fileIntent(m, entry, doc, file, purpose, extra = {}) {
 }
 /** @param {any} entry @param {any} notion @param {any} fulcra @param {any} file */
 function converged(entry, notion, fulcra, file) {
-  entry.baseline = { notion: documentHash(notion), fulcra: documentHash(fulcra) };
+  const next = { notion: documentHash(notion), fulcra: documentHash(fulcra) };
+  if (
+    !entry.contentUpdatedAt ||
+    entry.baseline?.notion !== next.notion ||
+    entry.baseline?.fulcra !== next.fulcra ||
+    entry.baselineFileId !== file.id
+  )
+    entry.contentUpdatedAt = new Date().toISOString();
+  entry.baseline = next;
   entry.fileId = file.id;
   entry.baselineFileId = file.id;
   entry.title = fulcra.title;
@@ -125,6 +135,73 @@ export async function advanceNotionSync(
     if (!m.discoveryWarnings.includes(message))
       m.discoveryWarnings = [...m.discoveryWarnings, message].slice(-10);
   };
+  /** @param {boolean} active */
+  async function persistPhase(active) {
+    connection.twoWayStatus = {
+      folder,
+      mapped: Object.keys(m.entries).length,
+      synced: Object.values(m.entries).filter((/** @type {any} */ e) => e.status === 'synced')
+        .length,
+      conflicts: Object.values(m.entries).filter((/** @type {any} */ e) =>
+        e.status.startsWith('conflict')
+      ).length,
+      phase: m.pending
+        ? m.pending.kind + ':' + m.pending.phase
+        : m.indexPending
+          ? 'index:' + m.indexPending.phase
+          : (m.scan ?? 'scan'),
+      index: indexStatusView(connection, m),
+      lastCycle: m.lastCycle
+    };
+    await saveManifest(store, connection, m, crypto);
+    if (active)
+      state.active = {
+        connectionId: connection.id,
+        generation: connection.generation,
+        phase: 'notion-two-way'
+      };
+    else {
+      state.active = null;
+      connection.nextDue =
+        Date.now() +
+        (connection.lastError
+          ? retryDelay
+          : m.scan || m.priority.length || m.index
+            ? 1000
+            : connection.config.intervalSeconds * 1000);
+    }
+    if (!active && (m.indexPending || m.indexStatus?.state === 'retry'))
+      connection.nextDue = Math.min(
+        connection.nextDue,
+        Math.max(Date.now() + 1000, m.indexRetryAt ?? 0)
+      );
+    return state;
+  }
+  if (
+    !m.pending &&
+    !Object.keys(m.queue).length &&
+    !m.priority.length &&
+    !m.indexYield &&
+    m.indexPending &&
+    (m.indexRetryAt ?? 0) <= Date.now()
+  ) {
+    try {
+      const pending = await advanceIndex(m, connection, client);
+      return await persistPhase(pending);
+    } catch {
+      m.indexStatus = {
+        ...m.indexStatus,
+        state: 'retry',
+        error: 'Index publication retry pending; working page synchronization continues.'
+      };
+      m.indexRetryAt = Date.now() + 30000;
+      m.indexYield = true;
+      return persistPhase(false);
+    }
+  }
+  // Even if an index retry is due before the next page interval, give ordinary
+  // polling a turn after a failed publication. Keep this fairness marker durable.
+  delete m.indexYield;
   /** @param {any} p */
   async function writePhase(p) {
     const latest = await client.latestFile(p.path);
@@ -645,32 +722,19 @@ export async function advanceNotionSync(
     }
     keepActive = false;
   }
-  connection.twoWayStatus = {
-    folder,
-    mapped: Object.keys(m.entries).length,
-    synced: Object.values(m.entries).filter((/** @type {any} */ e) => e.status === 'synced').length,
-    conflicts: Object.values(m.entries).filter((/** @type {any} */ e) =>
-      e.status.startsWith('conflict')
-    ).length,
-    phase: m.pending ? m.pending.kind + ':' + m.pending.phase : (m.scan ?? 'scan'),
-    lastCycle: m.lastCycle
-  };
-  await saveManifest(store, connection, m, crypto);
-  if (keepActive)
-    state.active = {
-      connectionId: connection.id,
-      generation: connection.generation,
-      phase: 'notion-two-way'
-    };
-  else {
-    state.active = null;
-    connection.nextDue =
-      Date.now() +
-      (connection.lastError
-        ? retryDelay
-        : m.scan || m.priority.length || m.index
-          ? 1000
-          : connection.config.intervalSeconds * 1000);
+  if (!m.pending && !Object.keys(m.queue).length && !m.priority.length) {
+    try {
+      const prepared = prepareIndex(m, connection, !!m.indexCheckRequested);
+      delete m.indexCheckRequested;
+      if (prepared && (m.indexRetryAt ?? 0) <= Date.now()) keepActive = true;
+    } catch {
+      m.indexStatus = {
+        ...m.indexStatus,
+        state: 'retry',
+        error: 'Index metadata needs attention; working page synchronization continues.'
+      };
+      m.indexRetryAt = Date.now() + 30000;
+    }
   }
-  return state;
+  return persistPhase(keepActive);
 }

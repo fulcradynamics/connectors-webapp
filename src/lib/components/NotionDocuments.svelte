@@ -157,6 +157,14 @@
   {#if listing}
     {#each listing.discoveryWarnings ?? [] as warning}<p role="status">{warning}</p>{/each}
     <p>Working copies: <code>{listing.folder}</code></p>
+    {#if listing.index}
+      <p>Agent index: <code>{listing.index.path}</code> · {listing.index.state}.</p>
+      <p>
+        The connector maintains this OKF-style navigation file from verified copies. Read it in
+        Fulcra; edits to the index are replaced on sync.
+      </p>
+      {#if listing.index.error}<p role="status">{listing.index.error}</p>{/if}
+    {/if}
     <p>
       {listing.documents.length} mapped pages · {listing.queued} queued edits{listing.pending
         ? ` · Applying ${listing.pending.kind}`

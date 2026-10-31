@@ -50,3 +50,5 @@ Credentials are encrypted server-side in your deployment's operational state. It
 ### Two-way Notion pages
 
 Notion imports are one-way by default. For editable page title/Markdown/archive sync in both directions, enable the explicit two-way checkbox, choose a creation parent and follow the [Notion two-way setup](providers/notion.md#optional-two-way-page-sync). The app includes a page editor, new-page creation, recoverable archive/restore, sync controls and reviewed conflict resolution. Preview and enable are still required.
+
+For two-way Notion pages, **Agent index** in the connection panel gives the generated `index.md` path and publication state. It is updated from verified sync results and groups page/source links by status, including archived/conflicted/unsupported entries. Agents can start there instead of enumerating UUID files. Edit the page working copies, not the generated index. See the [Notion guide](providers/notion.md#agent-navigation-index-and-storage) for storage and the reasons behind the current POC bounds.
