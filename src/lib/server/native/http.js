@@ -277,7 +277,15 @@ export async function nativeHTTP(event) {
     );
   }
   const text = method === 'GET' ? undefined : await request.text();
-  if (text && Buffer.byteLength(text) > (isWebhook ? 128000 : 32000))
+  if (
+    text &&
+    Buffer.byteLength(text) >
+      (isWebhook
+        ? 128000
+        : /^\/api\/connections\/[a-f0-9-]{36}\/documents$/i.test(path)
+          ? 64000
+          : 32000)
+  )
     error(413, 'Request too large');
   let commandHeaders = {};
   if (isWebhook) {

@@ -1,3 +1,4 @@
+import { createNotionPages } from '../notion-sync/notion.js';
 import { providerHTTP, rateAware, selectedResources } from './http.js';
 const version = '2026-03-11';
 /** @param {any[]} rich */
@@ -156,6 +157,7 @@ export function createNotion({ fetchImpl = fetch } = {}) {
   return {
     listResources,
     readPage,
+    readDocument: createNotionPages({ fetchImpl }).read,
     validate: async (/** @type {any} */ credential) => {
       const { data } = await http(credential, Date.now() + 10000)('users/me');
       return { accountId: data.bot?.workspace_name ? data.id : data.id };

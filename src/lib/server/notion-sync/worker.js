@@ -29,8 +29,8 @@ function finish(m, entry) {
     m.scan = 'pages';
   }
 }
-/** @param {any} m @param {any} entry @param {any} notion @param {any} fulcra */
-function conflict(m, entry, notion, fulcra) {
+/** @param {any} m @param {any} entry @param {any} notion @param {any} fulcra @param {any} currentFulcra */
+function conflict(m, entry, notion, fulcra, currentFulcra = fulcra) {
   const id = randomUUID();
   entry.status = 'conflict_pending';
   m.pending = {
@@ -40,6 +40,7 @@ function conflict(m, entry, notion, fulcra) {
     phase: 'start',
     index: 0,
     snapshots: [notion, fulcra],
+    expectedCurrent: { notion: documentHash(notion), fulcra: documentHash(currentFulcra) },
     paths: [],
     receipt: null
   };
@@ -73,6 +74,20 @@ function converged(entry, notion, fulcra, file) {
   delete entry.error;
   delete entry.createdPending;
 }
+/** @param {any} m @param {any} entry @param {string} id */
+function bindCreated(m, entry, id) {
+  id = pageId(id);
+  if (
+    Object.values(m.entries).some(
+      (/** @type {any} */ e) => e.localId !== entry.localId && e.notionId === id
+    )
+  )
+    throw Error('Two-way mapping scope collision requires inspection');
+  entry.notionId = id;
+  entry.createdPending = true;
+  entry.status = 'pending';
+  delete entry.deferred;
+}
 /** Advance one bounded persisted phase. The controller publishes the returned state before another call.
  * @param {any} state @param {any} connection @param {any} dependencies */
 export async function advanceNotionSync(
@@ -85,6 +100,13 @@ export async function advanceNotionSync(
   const m = await loadManifest(store, connection, crypto);
   for (const e of Object.values(m.entries)) /** @type {any} */ (e).folder = folder;
   let keepActive = false;
+  let retryDelay = 15000;
+  let currentEntryId = m.pending?.entryId ?? null;
+  m.discoveryWarnings ??= [];
+  const warn = (/** @type {string} */ message) => {
+    if (!m.discoveryWarnings.includes(message))
+      m.discoveryWarnings = [...m.discoveryWarnings, message].slice(-10);
+  };
   /** @param {any} p */
   async function writePhase(p) {
     const latest = await client.latestFile(p.path);
@@ -113,10 +135,13 @@ export async function advanceNotionSync(
     if (!latest || !latest.versions?.some((/** @type {any} */ v) => v.id === p.receipt.inputId))
       return 'pending';
     const known = new Set(p.beforeVersions);
-    if (
-      latest.versions.some((/** @type {any} */ v) => v.id !== p.receipt.inputId && !known.has(v.id))
-    )
+    const intervening = latest.versions.find(
+      (/** @type {any} */ v) => v.id !== p.receipt.inputId && !known.has(v.id)
+    );
+    if (intervening) {
+      p.interveningFileId = intervening.id;
       return 'changed';
+    }
     if (latest.id !== p.receipt.inputId || contentHash(latest.content) !== contentHash(p.content))
       return 'changed';
     p.file = latest;
@@ -134,9 +159,21 @@ export async function advanceNotionSync(
           throw Error('Conflict evidence changed; inspect working files');
         const local = await client.latestFile(filePath(entry));
         const remote = entry.notionId ? await notion.read(entry.notionId, credential) : null;
-        if (remote?.supported && local)
-          conflict(m, entry, remote.document, decodeDocument(local.content));
-        else {
+        if (remote?.supported && local) {
+          const retained =
+            p.interveningFileId && p.interveningFileId !== local.id
+              ? new TextDecoder('utf-8', { fatal: true }).decode(
+                  await client.readFileBytes(p.interveningFileId)
+                )
+              : local.content;
+          conflict(
+            m,
+            entry,
+            remote.document,
+            decodeDocument(retained),
+            decodeDocument(local.content)
+          );
+        } else {
           entry.status = 'edit_stale';
           entry.error = 'Working file changed before delivery';
           finish(m, entry);
@@ -150,7 +187,7 @@ export async function advanceNotionSync(
           m.priority.unshift(entry.localId);
         } else if (p.purpose === 'conflict-snapshot') {
           m.pending = p.continuation;
-          m.pending.paths.push({ path: p.path, hash: contentHash(p.content) });
+          m.pending.paths.push({ path: p.path, hash: contentHash(p.content), fileId: p.file.id });
           m.pending.index++;
         } else {
           converged(entry, p.notionDocument ?? p.document, p.document, p.file);
@@ -168,7 +205,12 @@ export async function advanceNotionSync(
         });
       } else {
         entry.status = 'conflict';
-        entry.conflict = { id: p.id, paths: p.paths, detectedAt: new Date().toISOString() };
+        entry.conflict = {
+          id: p.id,
+          paths: p.paths,
+          detectedAt: new Date().toISOString(),
+          expectedCurrent: p.expectedCurrent
+        };
         finish(m, entry);
       }
       keepActive = !!m.pending;
@@ -191,9 +233,7 @@ export async function advanceNotionSync(
           if (!proof || proof.content !== guard) throw Error('Creation guard readback pending');
           p.createCallStarted = true;
           const created = await notion.createMarker(entry.parentId, entry.localId, credential);
-          entry.notionId = created.id;
-          entry.createdPending = true;
-          entry.status = 'pending';
+          bindCreated(m, entry, created.id);
           m.pending = null;
           m.priority.unshift(entry.localId);
         }
@@ -205,9 +245,7 @@ export async function advanceNotionSync(
         if (matches.length > 1)
           throw Error('Multiple creation recovery markers require inspection');
         if (matches.length) {
-          entry.notionId = matches[0].id;
-          entry.createdPending = true;
-          entry.status = 'pending';
+          bindCreated(m, entry, matches[0].id);
           m.pending = null;
           m.priority.unshift(entry.localId);
         } else {
@@ -215,9 +253,10 @@ export async function advanceNotionSync(
           entry.status = 'creation_uncertain';
           if (!children.cursor) {
             p.cursor = null;
-            connection.lastError =
-              'Creation outcome uncertain; recovering marker without a duplicate POST';
+            entry.error = 'Creation outcome uncertain; recovering marker without a duplicate POST';
           }
+          entry.deferred = p;
+          finish(m, entry);
         }
       }
       keepActive = !!m.pending;
@@ -330,8 +369,22 @@ export async function advanceNotionSync(
         for (const child of children.pages) {
           if (Object.values(m.entries).some((/** @type {any} */ e) => e.notionId === child.id))
             continue;
-          if (Object.keys(m.entries).length >= 50)
-            throw Error('Two-way mapped-page capacity reached');
+          const recovering = Object.values(m.entries).find(
+            (/** @type {any} */ e) =>
+              e.origin === 'local' &&
+              !e.notionId &&
+              e.parentId === connection.config.twoWay.parentId &&
+              markerTitle(e.localId) === child.title
+          );
+          if (recovering) {
+            bindCreated(m, recovering, child.id);
+            m.priority.push(/** @type {any} */ (recovering).localId);
+            continue;
+          }
+          if (Object.keys(m.entries).length >= 50) {
+            warn('Mapped-page limit reached; extra Notion children were skipped');
+            continue;
+          }
           const localId = pageId(child.id);
           m.entries[localId] = {
             localId,
@@ -355,19 +408,33 @@ export async function advanceNotionSync(
           if (!latest.has(f.name)) latest.set(f.name, f);
         for (const [name, f] of latest) {
           if (!/^[a-f0-9-]{36}\.md$/i.test(name)) continue;
-          const id = pageId(name.slice(0, -3));
+          let id;
+          try {
+            id = pageId(name.slice(0, -3));
+          } catch {
+            warn('An invalid working-file name was skipped');
+            continue;
+          }
           if (!m.entries[id]) {
-            if (Object.keys(m.entries).length >= 50)
-              throw Error('Two-way mapped-page capacity reached');
+            if (Object.keys(m.entries).length >= 50) {
+              warn('Mapped-page limit reached; extra working files were skipped');
+              continue;
+            }
             const body = await client.latestFile(folder + '/' + name);
-            decodeDocument(body.content);
+            try {
+              decodeDocument(body.content);
+            } catch {
+              warn('An invalid working-file document was skipped');
+              continue;
+            }
             m.entries[id] = {
               localId: id,
               notionId: null,
               folder,
               parentId: connection.config.twoWay.parentId,
               origin: 'local',
-              status: 'pending'
+              status: 'pending',
+              fileId: f.id
             };
             m.priority.push(id);
           } else if (m.entries[id].fileId !== f.id) m.priority.push(id);
@@ -379,10 +446,14 @@ export async function advanceNotionSync(
       const ids = Object.keys(m.entries),
         id = m.priority[0] ?? ids[m.index % ids.length];
       entry = m.entries[id];
+      currentEntryId = id;
       if (!entry) throw Error('Select a two-way page');
       if (!allowed(connection, entry)) throw Error('Two-way selected scope mismatch');
       const file = await client.latestFile(filePath(entry));
-      if (!entry.notionId) {
+      if (entry.deferred) {
+        m.pending = entry.deferred;
+        delete entry.deferred;
+      } else if (!entry.notionId) {
         if (file) {
           decodeDocument(file.content);
           m.pending = { kind: 'create', entryId: id, operationId: randomUUID(), phase: 'create' };
@@ -411,8 +482,17 @@ export async function advanceNotionSync(
             local
           )
             decision = 'push';
-          if (entry.status === 'conflict' && decision !== 'converge' && decision !== 'noop')
-            decision = 'hold';
+          if (entry.status === 'conflict') {
+            const expectedCurrent = entry.conflict?.expectedCurrent;
+            if (
+              !expectedCurrent ||
+              expectedCurrent.notion !== documentHash(remote.document) ||
+              expectedCurrent.fulcra !== documentHash(local)
+            ) {
+              entry.status = 'pending';
+              decision = 'conflict';
+            } else decision = 'hold';
+          }
           if (resolution) {
             if (
               local &&
@@ -456,7 +536,19 @@ export async function advanceNotionSync(
   } catch (cause) {
     const message = cause instanceof Error ? cause.message : '';
     const status = /** @type {any} */ (cause)?.status;
-    if (m.pending?.kind === 'create' && m.pending.phase === 'create') m.pending.phase = 'recover';
+    if (status === 429)
+      retryDelay = Math.max(
+        1000,
+        Date.parse(/** @type {any} */ (cause).retryAt ?? '') - Date.now() || 60000
+      );
+    if (m.pending?.kind === 'create' && m.pending.phase === 'create') {
+      if (m.pending.createCallStarted && !(status >= 400 && status < 500 && status !== 408)) {
+        m.pending.phase = 'recover';
+      } else {
+        m.pending.attemptId = randomUUID();
+        m.pending.createCallStarted = false;
+      }
+    }
     connection.lastError =
       status === 401 || status === 403
         ? 'Notion authorization required: check Read, Update and Insert Content'
@@ -465,9 +557,27 @@ export async function advanceNotionSync(
             )
           ? message
           : 'Two-way sync retry pending; retained operation will be reconciled';
-    if (status === 404 && m.pending?.entryId) {
-      m.entries[m.pending.entryId].status = 'inaccessible';
-      m.pending = null;
+    if (status === 404 && currentEntryId) {
+      const failed = m.entries[currentEntryId];
+      failed.status = 'inaccessible';
+      failed.error = 'Notion page is inaccessible; other mapped pages continue';
+      if (m.pending) failed.deferred = m.pending;
+      finish(m, failed);
+    } else if (status === 404 && m.scan === 'pages') {
+      warn('Creation parent is inaccessible; existing mapped pages continue');
+      m.scan = 'files';
+      m.scanCursor = null;
+    } else if (
+      currentEntryId &&
+      /^(Invalid working-file|Invalid document|Invalid archive|Invalid Markdown|Choose a title|Markdown exceeds)/.test(
+        message
+      )
+    ) {
+      const failed = m.entries[currentEntryId];
+      failed.status = 'invalid';
+      failed.error = message;
+      if (m.pending) failed.deferred = m.pending;
+      finish(m, failed);
     }
     keepActive = false;
   }
@@ -493,7 +603,7 @@ export async function advanceNotionSync(
     connection.nextDue =
       Date.now() +
       (connection.lastError
-        ? 15000
+        ? retryDelay
         : m.scan || m.priority.length || m.index
           ? 1000
           : connection.config.intervalSeconds * 1000);

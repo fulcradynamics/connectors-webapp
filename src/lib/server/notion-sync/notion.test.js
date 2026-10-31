@@ -33,7 +33,7 @@ it('reads Markdown v2 and flags incomplete or unsupported representations', asyn
   expect((await incomplete.read(id, credential)).supported).toBe(false);
 });
 it('uses guarded body edits and explicit title/archive writes without child deletion', async () => {
-  const fetchImpl = vi.fn(async () =>
+  const fetchImpl = vi.fn(async (/** @type {any} */ _url, /** @type {any} */ _init) =>
     Response.json({ markdown: 'New', unknown_block_ids: [], truncated: false })
   );
   const adapter = createNotionPages({ fetchImpl });
