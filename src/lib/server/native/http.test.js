@@ -53,11 +53,13 @@ it('accepts a slow but valid retained snapshot instead of timing out after eight
       read: () => new Promise((resolve) => setTimeout(() => resolve({ value: snapshot }), 9000)),
       cancel: vi.fn(async () => {})
     };
-    getRun.mockReturnValue({ getReadable: () => ({ getReader: () => reader }) });
+    const getReadable = vi.fn(() => ({ getReader: () => reader, getTailIndex: async () => 42 }));
+    getRun.mockReturnValue({ getReadable });
     const assertion = expect(readSnapshot('retained-run')).resolves.toEqual(snapshot);
     await vi.advanceTimersByTimeAsync(9001);
     await assertion;
     expect(reader.cancel).toHaveBeenCalledOnce();
+    expect(getReadable).toHaveBeenCalledWith({ namespace: 'state', startIndex: 42 });
   } finally {
     vi.useRealTimers();
   }
@@ -67,11 +69,31 @@ it('fails closed with a retryable status when retained state cannot be read', as
   vi.useFakeTimers();
   try {
     const reader = { read: () => new Promise(() => {}), cancel: vi.fn(async () => {}) };
-    getRun.mockReturnValue({ getReadable: () => ({ getReader: () => reader }) });
+    const getReadable = vi.fn(() => ({ getReader: () => reader, getTailIndex: async () => 42 }));
+    getRun.mockReturnValue({ getReadable });
     const assertion = expect(readSnapshot('retained-run')).rejects.toMatchObject({ status: 503 });
     await vi.advanceTimersByTimeAsync(20001);
     await assertion;
     expect(reader.cancel).toHaveBeenCalledOnce();
+    expect(getReadable).toHaveBeenCalledWith({ namespace: 'state', startIndex: 42 });
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it('does not start a late stream read after its metadata deadline expires', async () => {
+  vi.useFakeTimers();
+  try {
+    const getReader = vi.fn();
+    const getReadable = vi.fn(() => ({
+      getReader,
+      getTailIndex: () => new Promise((resolve) => setTimeout(() => resolve(42), 25000))
+    }));
+    getRun.mockReturnValue({ getReadable });
+    const assertion = expect(readSnapshot('retained-run')).rejects.toMatchObject({ status: 503 });
+    await vi.advanceTimersByTimeAsync(25001);
+    await assertion;
+    expect(getReader).not.toHaveBeenCalled();
   } finally {
     vi.useRealTimers();
   }
