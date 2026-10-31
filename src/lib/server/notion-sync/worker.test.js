@@ -82,6 +82,11 @@ function fixture() {
         files.set(a.path, [item, ...(files.get(a.path) ?? [])]);
       }
     },
+    readFileBytes: async (/** @type {string} */ id) => {
+      const file = [...files.values()].flat().find((f) => f.id === id);
+      if (!file) throw Error('Missing retained file');
+      return new TextEncoder().encode(file.content);
+    },
     uploadFile: async (/** @type {string} */ path, /** @type {string} */ content) => {
       calls.push('guard');
       return put(path, content);
@@ -94,7 +99,11 @@ function fixture() {
         id,
         supported: true,
         titleProperty: 'title',
-        document: structuredClone(remote.get(id).document)
+        bodyUnavailable: !!remote.get(id).document.archived,
+        document: {
+          ...structuredClone(remote.get(id).document),
+          ...(remote.get(id).document.archived ? { markdown: '' } : {})
+        }
       };
     },
     children: async (/** @type {string} */ parent) => ({
@@ -243,6 +252,7 @@ it('propagates recoverable archive and restore without interpreting absence as d
       decodeDocument(f.files.get(f.path)[0].content).archived &&
       (await f.manifest()).entries[pageId].status === 'synced'
   );
+  expect(decodeDocument(f.files.get(f.path)[0].content).markdown).toBe('Original');
   f.put(f.path, encodeDocument(document('Original', 'Demo', false)));
   await f.until(
     async () =>
@@ -430,4 +440,62 @@ it('binds deferred creation markers to the original local ID when provider IDs d
   ).toHaveLength(1);
   expect(m.entries[localId].notionId).toBe(newId);
   expect(f.remote.get(newId).document.title).toBe('Distinct created page');
+});
+
+it('archives a changed Fulcra body and restores it without blanking the hidden Notion body', async () => {
+  const f = fixture();
+  await initial(f);
+  f.put(f.path, encodeDocument(document('Changed body', 'Renamed', true)));
+  await f.until(
+    async () =>
+      f.remote.get(pageId).document.archived &&
+      (await f.manifest()).entries[pageId].status === 'synced'
+  );
+  expect(f.remote.get(pageId).document.markdown).toBe('Changed body');
+  expect(decodeDocument(f.files.get(f.path)[0].content)).toEqual(
+    document('Changed body', 'Renamed', true)
+  );
+  f.put(f.path, encodeDocument(document('Changed body', 'Renamed', false)));
+  await f.until(
+    async () =>
+      !f.remote.get(pageId).document.archived &&
+      (await f.manifest()).entries[pageId].status === 'synced'
+  );
+  expect(f.remote.get(pageId).document.markdown).toBe('Changed body');
+});
+it('retains concurrent local edits when a Notion archive hides its body', async () => {
+  const f = fixture();
+  await initial(f);
+  f.remote.get(pageId).document.archived = true;
+  f.put(f.path, encodeDocument(document('Local concurrent edit')));
+  await f.until(async () => (await f.manifest()).entries[pageId].status === 'conflict');
+  const m = await f.manifest();
+  const remoteSnapshot = decodeDocument(
+    new TextDecoder().decode(
+      await f.client.readFileBytes(m.entries[pageId].conflict.paths[0].fileId)
+    )
+  );
+  expect(remoteSnapshot).toEqual(document('Original', 'Demo', true));
+  expect(decodeDocument(f.files.get(f.path)[0].content).markdown).toBe('Local concurrent edit');
+});
+it('does not infer an empty body for a newly seen trashed page without a verified copy', async () => {
+  const f = fixture();
+  f.remote.get(pageId).document.archived = true;
+  await f.until(async () => (await f.manifest()).entries[pageId].status === 'unsupported');
+  expect(f.files.has(f.path)).toBe(false);
+  expect(f.calls).not.toContain('body');
+});
+it('preserves a hidden Notion edit when a cached working copy requests restore', async () => {
+  const f = fixture();
+  await initial(f);
+  f.remote.get(pageId).document = document('Notion changed before trash', 'Demo', true);
+  await f.until(
+    async () =>
+      decodeDocument(f.files.get(f.path)[0].content).archived &&
+      (await f.manifest()).entries[pageId].status === 'synced'
+  );
+  f.put(f.path, encodeDocument(document('Original', 'Demo', false)));
+  await f.until(async () => (await f.manifest()).entries[pageId].status === 'conflict');
+  expect(f.remote.get(pageId).document.markdown).toBe('Notion changed before trash');
+  expect(f.calls).not.toContain('body');
 });

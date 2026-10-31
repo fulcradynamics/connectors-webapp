@@ -1,3 +1,4 @@
+import { retainArchivedBody } from './archive-body.js';
 import { randomUUID } from 'node:crypto';
 import { loadManifest, saveManifest, workingFolder } from './state.js';
 import { pageId, createNotionPages } from './notion.js';
@@ -83,7 +84,12 @@ export function createDocumentService({
     if (!document) throw Error('Document is waiting for its first verified working copy');
     let expectedNotion = null;
     if (e.conflict) {
-      const remote = await notion.read(e.notionId, credential);
+      const remote = await retainArchivedBody(
+        await notion.read(e.notionId, credential),
+        e,
+        client,
+        m.pending
+      );
       if (!remote.supported) throw Error('Notion Markdown is incomplete or unsupported');
       expectedNotion = documentHash(remote.document);
       if (view !== 'current')
@@ -157,7 +163,12 @@ export function createDocumentService({
     if (input.operation === 'resolve') {
       if (!['notion', 'fulcra'].includes(input.choice) || input.conflictId !== e.conflict?.id)
         throw Error('Conflict changed; reload both versions before resolving');
-      const remote = await notion.read(e.notionId, credential),
+      const remote = await retainArchivedBody(
+          await notion.read(e.notionId, credential),
+          e,
+          client,
+          m.pending
+        ),
         local = decodeDocument(file.content);
       if (!remote.supported || input.expectedNotion !== documentHash(remote.document))
         throw Error('Conflict changed: a newer Notion version exists; reload');

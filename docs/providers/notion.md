@@ -81,3 +81,9 @@ Each write has a retained intent and readback. New Notion pages can briefly appe
 
 Conflict checks cover the final preflight and retained Fulcra versions. **Notion does not provide a documented atomic conditional update for titles or empty bodies**: an edit in the small interval after preflight and before that API write can still be overwritten. This is not an atomic transaction across the two services. Normal detected conflicts and readback mismatches are retained for resolution.
 Official references: [internal connections](https://developers.notion.com/guides/get-started/internal-connections), [search indexing and limitations](https://developers.notion.com/reference/search-optimizations-and-limitations), [block children](https://developers.notion.com/reference/get-block-children), [versioning](https://developers.notion.com/reference/versioning).
+
+### Trash and restore
+
+Use **Archive page** in Fulcra or **Move to Trash** in Notion for recoverable removal. To bring it back, use **Restore page** in either service, then sync and refresh the document. Do not permanently delete a page during this workflow.
+
+Notion hides Markdown while a page is in Trash. The connector keeps the last verified body in the archived working file and reads the actual body again after restore. If you changed the hidden body before trashing it and then restore an older Fulcra copy, the connector retains a conflict for review instead of overwriting the newly visible text. A trashed page without a verified working copy is skipped until restored.
