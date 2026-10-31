@@ -1,4 +1,5 @@
-/** @typedef {{name:string,credentialUrl:string|null,credentialLink:string,credentialNote?:string,additionalCredentialLinks?:Array<{url:string,label:string}>,setupUrl:string,setupLink:string,credentialSteps:string[],scopes:string,sourceLabel:string,sourceHelp:string,output:string,backfillHelp:string,limitations:string,accountHint?:string}} ConnectorSetup */
+export const MAX_SELECTED_SOURCES = 50;
+/** @typedef {{name:string,credentialUrl:string|null,credentialLink:string,credentialNote?:string,additionalCredentialLinks?:Array<{url:string,label:string}>,setupUrl:string,setupLink:string,credentialSteps:string[],scopes:string,sourceLabel:string,sourceHelp:string,sourceTroubleshooting?:string,output:string,backfillHelp:string,limitations:string,accountHint?:string}} ConnectorSetup */
 /** @type {Record<string,ConnectorSetup>} */
 const providers = {
   granola: {
@@ -75,24 +76,31 @@ const providers = {
   },
   notion: {
     name: 'Notion',
-    credentialUrl: 'https://www.notion.so/profile/integrations',
+    credentialUrl: 'https://app.notion.com/developers/connections',
     credentialLink: 'Open Notion connection console',
-    setupUrl: 'https://www.notion.com/help/create-integrations-with-the-notion-api',
+    setupUrl: 'https://developers.notion.com/guides/get-started/internal-connections',
     setupLink: 'Notion connection setup instructions',
     credentialSteps: [
-      'Open the Notion connection console below. Create a new internal connection for your workspace, enable Read content and copy its token from Configuration. A workspace owner must create the connection.',
-      'In Notion, explicitly connect that integration to each root page you want to import. Paste the token below; a token alone does not grant all page access.'
+      'Open the Notion connection console below. In Build → Internal connections, choose Create a new connection, name it and select the workspace to import. You must be a workspace owner. If you already created one, open it instead.',
+      'In Configuration → Capabilities, enable Read content. Turn off Update content, Insert content, comment access and agent access. Choose No user information. This connector only reads Notion.',
+      'Open Content access → Edit access. Select the pages or databases to share, then Save. Sharing a parent grants access to its children. A new connection has no page access, even when its token verifies.',
+      'Alternatively, open a page in Notion → ••• → Connections → Add connection, select your internal connection and confirm the page/child access.',
+      'Return to Configuration and copy the API token. Paste it only in the protected Internal connection API token field below, name this connection, then Verify and continue. Never paste the token in chat or a page.',
+      'In Sources, discover pages and select the documents you want. If the picker is empty after sharing, allow Notion search to index the change, then Refresh sources. Next review Destination, Schedule and the preview before enabling.'
     ],
-    scopes: 'Read content on explicitly shared pages; no source write capability is needed.',
+    scopes:
+      'Read content on explicitly shared pages and their children. No content writes, comments, user information or agent capability is needed.',
     sourceLabel: 'root pages',
     sourceHelp:
-      'Select a small root page. Its accessible nested blocks are traversed; shared-page search only fills this picker.',
+      'Select page documents to import, including individual database entries returned by search. Each selected page includes its accessible nested blocks. Sharing a database does not automatically select its rows or future entries.',
+    sourceTroubleshooting:
+      'Token verification checks the connection identity, not page access. In the Notion connection console, open Content access → Edit access → select pages or databases → Save. Confirm the workspace and connection match this token. Allow search indexing to catch up, then Refresh sources here. Shared parents include their children, but you must select the page documents to import.',
     output:
-      'Complete page/block documents as Markdown files and v1 records with normalized page content. Unsupported blocks are marked; external files remain links.',
+      'One-way Notion → Fulcra. Complete page/block documents as Markdown files and v1 records with normalized page content. Unsupported blocks are marked; external files remain links.',
     backfillHelp:
       'Notion imports the complete selected root and nested blocks; this is not a date filter. Roots are rescanned to find changes in older nested content.',
     limitations:
-      'Database/data-source rows and comments are not expanded. Each root is bounded to 5,000 blocks and 2 MB of traversal state; choose smaller roots when needed.'
+      'Database/data-source rows are not automatically expanded or added later; select individual page entries from discovery. Comments are not imported. Fulcra edits never write back to Notion. Each root is bounded to 5,000 blocks and 2 MB of traversal state; choose smaller roots when needed.'
   },
   slack: {
     name: 'Slack',

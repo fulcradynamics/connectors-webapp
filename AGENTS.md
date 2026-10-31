@@ -13,6 +13,8 @@ Read [README](README.md), [agent guide](docs/agent-guide.md), [design](docs/desi
 
 ## Required connector experience
 
+Setup steps must name the actual screens, buttons, scope switches and Save/confirmation action. Explain successful-token/empty-picker recovery, source limits and sync direction.
+
 Every connector must include direct official token/app creation or management links, separately labeled help, exact inputs/scopes and any plan/admin requirements. Use `src/lib/connectors/setup.js` and `CredentialLinks.svelte` on new, replacement and saved views. For documented native-only key creation, show the exact path and official help; do not invent a URL.
 
 Preserve explicit Sources → Destination → Schedule → Preview/Enable. Users choose resources, folder/v1 type, frequency and history. They can create a named connector-compatible v1 type inline, pause/retry/disconnect, add another connection and return to the chooser without changing saved settings. Defaults are proposals to review, not permission to collect. Background Fulcra authorization is app-wide, separate from browser sign-in.
