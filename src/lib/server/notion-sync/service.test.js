@@ -129,3 +129,53 @@ it('rejects a resolution of retained snapshots after a newer unreviewed Notion e
     })
   ).rejects.toThrow(/Conflict changed/i);
 });
+it('uses the same preserved archived body when reviewing and resolving a conflict', async () => {
+  const f = fixture(),
+    m = await loadManifest(f.store, f.connection, crypto);
+  const archived = { ...doc, archived: true };
+  const { contentHash } = await import('../sync/identity.js');
+  const remoteText = encodeDocument(archived),
+    localText = encodeDocument(doc);
+  m.entries[id].baseline = { notion: documentHash(doc), fulcra: documentHash(doc) };
+  m.entries[id].baselineFileId = 'baseline';
+  m.entries[id].status = 'conflict';
+  m.entries[id].conflict = {
+    id: other,
+    paths: [
+      { path: '/n', fileId: 'remote-snapshot', hash: contentHash(remoteText) },
+      { path: '/f', fileId: 'local-snapshot', hash: contentHash(localText) }
+    ],
+    expectedCurrent: { notion: documentHash(archived), fulcra: documentHash(doc) }
+  };
+  await saveManifest(f.store, f.connection, m, crypto);
+  const service = createDocumentService({
+    store: f.store,
+    connection: f.connection,
+    crypto,
+    credential: {},
+    client: {
+      ...f.client,
+      readFileBytes: async (/** @type {string} */ fileId) =>
+        new TextEncoder().encode(fileId === 'remote-snapshot' ? remoteText : localText)
+    },
+    notion: {
+      read: async () => ({
+        supported: true,
+        bodyUnavailable: true,
+        document: { ...archived, markdown: '' }
+      })
+    }
+  });
+  const opened = await service.read(id);
+  expect(opened.expectedNotion).toBe(documentHash(archived));
+  expect(
+    await service.mutate({
+      operation: 'resolve',
+      id,
+      choice: 'fulcra',
+      conflictId: other,
+      expectedRevision: opened.revision,
+      expectedNotion: opened.expectedNotion
+    })
+  ).toEqual({ id, queued: true });
+});

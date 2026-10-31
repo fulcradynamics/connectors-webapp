@@ -80,3 +80,16 @@ it('creates a deterministic recovery marker and enumerates actual page children'
   await expect(adapter.read('../foreign', credential)).rejects.toThrow(/page ID/);
   expect(fetchImpl).toHaveBeenCalledTimes(2);
 });
+it('marks a trashed page body as unavailable instead of authoritative empty content', async () => {
+  const adapter = createNotionPages({
+    fetchImpl: async (url) =>
+      Response.json(
+        String(url).includes('/markdown')
+          ? { markdown: '', truncated: false, unknown_block_ids: [] }
+          : page({ in_trash: true })
+      )
+  });
+  const result = await adapter.read(id, credential);
+  expect(result.document.archived).toBe(true);
+  expect(result.bodyUnavailable).toBe(true);
+});

@@ -42,6 +42,7 @@ export function createNotionPages({ fetchImpl = fetch } = {}) {
       Buffer.byteLength(data.markdown) <= MAX_MARKDOWN_BYTES;
     return {
       id,
+      bodyUnavailable: !!(page.in_trash || page.archived),
       titleProperty: property?.id ?? title?.[0] ?? 'title',
       revision: page.last_edited_time,
       supported,

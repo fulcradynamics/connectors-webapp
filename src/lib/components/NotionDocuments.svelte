@@ -233,6 +233,10 @@
             ? 'archived'
             : 'active'}.
         </p>
+        {#if archived}<p>
+            The archived body is the last verified text. Notion’s current body is read again after
+            restore.
+          </p>{/if}
         <div class="actions">
           <button
             class="primary"

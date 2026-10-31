@@ -1,3 +1,4 @@
+import { retainArchivedBody } from './archive-body.js';
 import { randomUUID } from 'node:crypto';
 import { nativeStore } from '../native/state.js';
 import { createNotionPages, markerTitle, pageId } from './notion.js';
@@ -66,6 +67,7 @@ function fileIntent(m, entry, doc, file, purpose, extra = {}) {
 function converged(entry, notion, fulcra, file) {
   entry.baseline = { notion: documentHash(notion), fulcra: documentHash(fulcra) };
   entry.fileId = file.id;
+  entry.baselineFileId = file.id;
   entry.title = fulcra.title;
   entry.archived = fulcra.archived;
   entry.status = 'synced';
@@ -103,6 +105,8 @@ export async function advanceNotionSync(
   let retryDelay = 15000;
   let currentEntryId = m.pending?.entryId ?? null;
   m.discoveryWarnings ??= [];
+  const readRemote = async (/** @type {any} */ entry, /** @type {any} */ credential) =>
+    retainArchivedBody(await notion.read(entry.notionId, credential), entry, client, m.pending);
   const warn = (/** @type {string} */ message) => {
     if (!m.discoveryWarnings.includes(message))
       m.discoveryWarnings = [...m.discoveryWarnings, message].slice(-10);
@@ -158,7 +162,7 @@ export async function advanceNotionSync(
         if (p.purpose === 'conflict-snapshot')
           throw Error('Conflict evidence changed; inspect working files');
         const local = await client.latestFile(filePath(entry));
-        const remote = entry.notionId ? await notion.read(entry.notionId, credential) : null;
+        const remote = entry.notionId ? await readRemote(entry, credential) : null;
         if (remote?.supported && local) {
           const retained =
             p.interveningFileId && p.interveningFileId !== local.id
@@ -262,7 +266,7 @@ export async function advanceNotionSync(
       keepActive = !!m.pending;
     } else if (p?.kind === 'notion') {
       const file = await client.latestFile(filePath(entry));
-      const remote = await notion.read(entry.notionId, credential);
+      const remote = await readRemote(entry, credential);
       if (!remote.supported)
         throw Error('Notion Markdown representation is incomplete or unsupported');
       const actual = remote.document,
@@ -462,7 +466,7 @@ export async function advanceNotionSync(
           finish(m, entry);
         }
       } else {
-        const remote = await notion.read(entry.notionId, credential);
+        const remote = await readRemote(entry, credential);
         if (!remote.supported) {
           entry.status = 'unsupported';
           entry.title = remote.document.title;
