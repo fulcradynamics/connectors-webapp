@@ -36,7 +36,7 @@ Notion does not document atomic compare-and-swap for page titles. Rechecks and r
 
 Every side effect has a persisted intent before execution. Result ambiguity is reconciled, not blindly repeated. New Notion pages are first created with a deterministic temporary title `Fulcra sync <local UUID>`. If the creation response is lost, enumerate the configured parent's actual children and recover that exact marker; do not send a second create while the first outcome is unknown. Persist the returned page ID before filling its final title/body. Repeated polls must stabilize without new versions or duplicate pages.
 
-Avoid overwriting a newer Fulcra edit during a pull: reread the latest file before upload and again after readback. If a race is observed, retain the competing bytes and surface a conflict. File APIs also lack a documented atomic cross-service transaction; that limitation is explicit.
+Avoid overwriting a newer Fulcra edit during a pull: reread the latest file before upload and again after readback. If a race is observed, retain the competing bytes and surface a conflict. After upload, inspect retained Fulcra versions since the guarded preflight: an intervening third-party version is retained as a conflict even if our upload became latest. File APIs also lack a documented atomic cross-service transaction; that limitation is explicit. A Notion title or empty-body edit made after our final preflight and before the API mutation can be overwritten without detection because Notion exposes no conditional update or version-history read API. This first version provides preflight conflict detection and guarded body edits, not atomic concurrency protection for that race window.
 
 ## Implementation boundaries
 

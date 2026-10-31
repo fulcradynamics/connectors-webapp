@@ -19,7 +19,7 @@
 
 ## Review Focus
 
-- A newer remote change immediately before a write must produce conflict/reconciliation rather than a blind overwrite.
+- A remote change visible at the final preflight must produce conflict/reconciliation. Inspect intervening Fulcra versions after upload; document and exercise the remaining Notion title/empty-body post-preflight race window rather than claiming atomic protection.
 - A lost create response must recover the marker instead of creating a duplicate.
 - Markdown normalization must stabilize without writing on every cycle.
 - File metadata/IDs are untrusted and cannot select foreign Notion pages or parents.
