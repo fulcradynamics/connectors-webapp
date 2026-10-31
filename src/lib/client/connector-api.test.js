@@ -224,3 +224,19 @@ it('does not replay mutations whose backend may not deduplicate commands', async
   ).rejects.toThrow('Gateway failure');
   expect(fetchImpl).toHaveBeenCalledTimes(1);
 });
+
+it('retries an implicit GET read after a transient server failure', async () => {
+  const replies = [
+    Response.json({ message: 'Unavailable' }, { status: 503 }),
+    Response.json({ documents: [] })
+  ];
+  const fetchImpl = vi.fn(async () => replies.shift());
+  expect(
+    await connectorRequest(
+      '/api/connections/example/documents',
+      {},
+      { fetchImpl: /** @type {any} */ (fetchImpl), delay: async () => {} }
+    )
+  ).toEqual({ documents: [] });
+  expect(fetchImpl).toHaveBeenCalledTimes(2);
+});
