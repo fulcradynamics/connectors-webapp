@@ -3,6 +3,7 @@
   import CredentialLinks from './CredentialLinks.svelte';
   import { onMount, untrack } from 'svelte';
   import ConnectionForm from './ConnectionForm.svelte';
+  import NotionDocuments from './NotionDocuments.svelte';
   import {
     MAX_SELECTED_SOURCES,
     getConnectorSetup,
@@ -27,6 +28,8 @@
   const stages = ['Sources', 'Destination', 'Schedule', 'Review'];
   let step = $state(0);
   let resources = $state<any[]>([]);
+  let twoWayEnabled = $state(!!initial.config.twoWay?.enabled);
+  let twoWayParent = $state(initial.config.twoWay?.parentId ?? '');
   let cursor = $state<string | null>(null);
   let selected = $state<string[]>(initial.config.resources ?? []);
   let mode = $state(defaults.mode);
@@ -45,7 +48,11 @@
   let creatingType = $state(false);
   let typeName = $state('');
   let typeDescription = $state('');
-  const sourcesReady = $derived(selected.length > 0 && selected.length <= MAX_SELECTED_SOURCES);
+  const sourcesReady = $derived(
+    selected.length > 0 &&
+      selected.length <= MAX_SELECTED_SOURCES &&
+      (!twoWayEnabled || selected.includes(twoWayParent))
+  );
   const destinationReady = $derived(
     (mode === 'record' || !!folder.trim()) && (mode === 'file' || !!recordType)
   );
@@ -107,6 +114,7 @@
     await action(async () => {
       const result = await api(`/api/connections/${connection.id}`, 'PUT', {
         resources: selected,
+        twoWay: twoWayEnabled ? { enabled: true, parentId: twoWayParent } : null,
         backfillSince: new Date(since + 'T00:00:00Z').toISOString(),
         intervalSeconds: Number(interval),
         route: { mode, folder, recordType }
@@ -199,7 +207,11 @@
         Number(interval)
       )} · initial date {since}.
     </p>
-    <p>{info.output}</p>
+    <p>
+      {connection.config.twoWay?.enabled
+        ? 'Two-way Notion ↔ Fulcra: editable page titles, Markdown and recoverable archive/restore. Other Notion properties and comments are not mirrored.'
+        : info.output}
+    </p>
     <p>
       Configuration and preview do not import data. A connection must be enabled before writes
       begin.
@@ -224,6 +236,39 @@
             {info.sourceHelp} Only the IDs you select are collected. Discovery does not enable syncing.
             Choose up to {MAX_SELECTED_SOURCES} per connection.
           </p>
+          {#if connection.connector === 'notion'}
+            <label class="choice"
+              ><input
+                type="checkbox"
+                bind:checked={twoWayEnabled}
+                onchange={() => {
+                  if (twoWayEnabled) mode = 'file';
+                  invalidate();
+                }}
+              /><span>Enable two-way Notion ↔ Fulcra sync</span></label
+            >
+            {#if twoWayEnabled}
+              <p>
+                Two-way sync can update, create, archive and restore Notion pages. In the Notion
+                connection console → Configuration, enable Read content, Update content and Insert
+                content. Keep comment, user and agent access off. Nothing writes until you preview
+                and enable below.
+              </p>
+              <label
+                >Creation parent page<select bind:value={twoWayParent} onchange={invalidate}
+                  ><option value="">Choose a selected page</option>{#each selected as id}<option
+                      value={id}>{resources.find((r) => r.id === id)?.name ?? id}</option
+                    >{/each}</select
+                ></label
+              >
+              <p>
+                New pages created from Fulcra become children of this page; new Notion children here
+                are discovered automatically. Editable working files go under the destination’s live
+                folder for this connection. The parent, folder and initial selection are fixed once
+                bound; use another connection for a different scope.
+              </p>
+            {/if}
+          {/if}
           <button class="secondary" disabled={busy} onclick={discover}
             >{loaded
               ? cursor
@@ -264,7 +309,7 @@
             each connection.
           </p>
           <label
-            >Write format<select bind:value={mode} onchange={invalidate}
+            >Write format<select bind:value={mode} disabled={twoWayEnabled} onchange={invalidate}
               ><option value="file">Files in a folder</option><option value="record"
                 >v1 records</option
               ><option value="both">Files + v1 records</option></select
@@ -470,6 +515,10 @@
     </fieldset>
   </div>
   {#if message}<p role="alert" class="error">{message}</p>{/if}
+  {#if connection.connector === 'notion' && connection.config.twoWay?.enabled}<NotionDocuments
+      connectionId={connection.id}
+      active={connection.status === 'ready'}
+    />{/if}
   <div class="actions">
     <button class="secondary" disabled={busy} onclick={() => (replacing = true)}
       >Replace credential</button

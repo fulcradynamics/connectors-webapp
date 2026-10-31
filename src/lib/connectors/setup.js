@@ -82,25 +82,25 @@ const providers = {
     setupLink: 'Notion connection setup instructions',
     credentialSteps: [
       'Open the Notion connection console below. In Build → Internal connections, choose Create a new connection, name it and select the workspace to import. You must be a workspace owner. If you already created one, open it instead.',
-      'In Configuration → Capabilities, enable Read content. Turn off Update content, Insert content, comment access and agent access. Choose No user information. This connector only reads Notion.',
+      'In Configuration → Capabilities, enable Read content. For one-way import, keep Update content and Insert content off. For optional two-way sync, also enable Update content and Insert content. Keep comment and agent access off and choose No user information.',
       'Open Content access → Edit access. Select the pages or databases to share, then Save. Sharing a parent grants access to its children. A new connection has no page access, even when its token verifies.',
       'Alternatively, open a page in Notion → ••• → Connections → Add connection, select your internal connection and confirm the page/child access.',
       'Return to Configuration and copy the API token. Paste it only in the protected Internal connection API token field below, name this connection, then Verify and continue. Never paste the token in chat or a page.',
-      'In Sources, discover pages and select the documents you want. If the picker is empty after sharing, allow Notion search to index the change, then Refresh sources. Next review Destination, Schedule and the preview before enabling.'
+      'In Sources, discover and select pages. For two-way sync, explicitly enable its checkbox and choose a selected creation parent; it creates editable Fulcra working files and can write changes back to Notion. If discovery is empty, allow search indexing, then Refresh sources. Review Destination, Schedule and preview before enabling.'
     ],
     scopes:
-      'Read content on explicitly shared pages and their children. No content writes, comments, user information or agent capability is needed.',
+      'Read content on shared pages and children for one-way import. Optional two-way sync also requires Update content and Insert content on selected pages and the creation parent. Comment, user-information and agent access are not needed.',
     sourceLabel: 'root pages',
     sourceHelp:
       'Select page documents to import, including individual database entries returned by search. Each selected page includes its accessible nested blocks. Sharing a database does not automatically select its rows or future entries.',
     sourceTroubleshooting:
       'Token verification checks the connection identity, not page access. In the Notion connection console, open Content access → Edit access → select pages or databases → Save. Confirm the workspace and connection match this token. Allow search indexing to catch up, then Refresh sources here. Shared parents include their children, but you must select the page documents to import.',
     output:
-      'One-way Notion → Fulcra. Complete page/block documents as Markdown files and v1 records with normalized page content. Unsupported blocks are marked; external files remain links.',
+      'Default one-way Notion → Fulcra; optional two-way page title/Markdown/archive sync uses editable working copies. One-way imports complete page/block documents as Markdown files and v1 records with normalized page content. Unsupported blocks are marked; external files remain links.',
     backfillHelp:
       'Notion imports the complete selected root and nested blocks; this is not a date filter. Roots are rescanned to find changes in older nested content.',
     limitations:
-      'Database/data-source rows are not automatically expanded or added later; select individual page entries from discovery. Comments are not imported. Fulcra edits never write back to Notion. Each root is bounded to 5,000 blocks and 2 MB of traversal state; choose smaller roots when needed.'
+      'Database/data-source rows are not automatically expanded or added later; select individual page entries from discovery. Comments are not imported. One-way mode never writes back; optional two-way mode syncs page title, Markdown and recoverable archive/restore. Other database properties and comments are not mirrored. Each root is bounded to 5,000 blocks and 2 MB of traversal state; choose smaller roots when needed.'
   },
   slack: {
     name: 'Slack',

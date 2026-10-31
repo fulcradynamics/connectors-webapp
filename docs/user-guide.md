@@ -45,3 +45,7 @@ Credentials are encrypted server-side in your deployment's operational state. It
 ## Ask an agent to add a service
 
 > Read this repo's AGENTS.md and agent guide. Add SERVICE for these sources and destination. Follow the existing adapter, credential-link and source/destination/schedule/preview patterns. Use Fulcra v1 types and folders. Add synthetic tests and explain limits. Prepare a PR for review. Ask about missing settings before enabling collection.
+
+### Two-way Notion pages
+
+Notion imports are one-way by default. For editable page title/Markdown/archive sync in both directions, enable the explicit two-way checkbox, choose a creation parent and follow the [Notion two-way setup](providers/notion.md#optional-two-way-page-sync). The app includes a page editor, new-page creation, recoverable archive/restore, sync controls and reviewed conflict resolution. Preview and enable are still required.
