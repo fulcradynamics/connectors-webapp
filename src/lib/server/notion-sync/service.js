@@ -112,7 +112,10 @@ export function createDocumentService({
       document,
       path,
       revision: file?.id ?? null,
-      queued: !!m.queue[e.localId] || !!e.recoveryEdit || m.pending?.entryId === e.localId,
+      queued:
+        !!m.queue[e.localId] ||
+        (!!e.recoveryEdit && !e.conflict) ||
+        m.pending?.entryId === e.localId,
       status: m.queue[e.localId] ? 'queued' : e.status,
       conflict: e.conflict ? { id: e.conflict.id, detectedAt: e.conflict.detectedAt } : null,
       expectedNotion
@@ -172,7 +175,7 @@ export function createDocumentService({
       throw Error('Document changed: a newer working-file revision exists; reload before saving');
     if (m.pending?.entryId === e.localId)
       throw Error('Document is syncing; wait for it to finish and reload before saving');
-    if (e.recoveryEdit)
+    if (e.recoveryEdit && input.operation !== 'resolve')
       throw Error(
         'A saved edit is retained for recovery; sync and review the conflict before editing'
       );

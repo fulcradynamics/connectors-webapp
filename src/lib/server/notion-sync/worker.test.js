@@ -670,3 +670,85 @@ it('retains a transient discovered-file read failure for retry instead of skippi
   offline = false;
   await f.until(async () => !!(await f.manifest()).entries[newId]);
 });
+
+it('keeps an accepted recovery choice through conflict refresh until explicitly resolved', async () => {
+  const f = fixture();
+  await initial(f);
+  const service = () =>
+    createDocumentService({
+      store: nativeStore(f.state),
+      connection: f.state.connections[connectionId],
+      crypto,
+      client: f.client,
+      notion: f.notion,
+      credential: {}
+    });
+  const before = await service().read(pageId);
+  await service().mutate({
+    operation: 'save',
+    id: pageId,
+    expectedRevision: before.revision,
+    document: document('ACCEPTED SAVE')
+  });
+  f.put(f.path, encodeDocument(document('OTHER LOCAL EDIT')));
+  await f.until(async () => (await f.manifest()).entries[pageId].status === 'conflict');
+  const first = await service().read(pageId);
+  const firstConflictId = first.conflict?.id;
+  if (!firstConflictId) throw Error('Expected first recovery conflict');
+  expect((await service().read(pageId, 'fulcra')).document.markdown).toBe('ACCEPTED SAVE');
+  f.remote.get(pageId).document = document('NEW REMOTE EDIT');
+  await f.until(async () => {
+    const e = (await f.manifest()).entries[pageId];
+    return e.status === 'conflict' && e.conflict.id !== firstConflictId;
+  });
+  const refreshed = await service().read(pageId);
+  if (!refreshed.conflict) throw Error('Expected refreshed recovery conflict');
+  expect((await service().read(pageId, 'fulcra')).document.markdown).toBe('ACCEPTED SAVE');
+  expect(refreshed.queued).toBe(false);
+  await service().mutate({
+    operation: 'resolve',
+    id: pageId,
+    choice: 'fulcra',
+    conflictId: refreshed.conflict.id,
+    expectedRevision: refreshed.revision,
+    expectedNotion: refreshed.expectedNotion
+  });
+  await f.until(async () => (await f.manifest()).entries[pageId].status === 'synced');
+  expect(f.remote.get(pageId).document.markdown).toBe('ACCEPTED SAVE');
+  expect((await f.manifest()).entries[pageId].recoveryEdit).toBeUndefined();
+});
+
+it('holds a recovery conflict through temporary unsupported Notion content without choosing a winner', async () => {
+  const f = fixture();
+  await initial(f);
+  const service = createDocumentService({
+    store: nativeStore(f.state),
+    connection: f.state.connections[connectionId],
+    crypto,
+    client: f.client,
+    notion: f.notion,
+    credential: {}
+  });
+  const before = await f.client.latestFile(f.path);
+  await service.mutate({
+    operation: 'save',
+    id: pageId,
+    expectedRevision: before.id,
+    document: document('ACCEPTED SAVE')
+  });
+  f.put(f.path, encodeDocument(document('OTHER LOCAL EDIT')));
+  await f.until(async () => (await f.manifest()).entries[pageId].status === 'conflict');
+  const read = f.notion.read;
+  let unsupported = true;
+  f.notion.read = async (/** @type {string} */ id) => ({
+    ...(await read(id)),
+    supported: !unsupported
+  });
+  await f.until(async () => (await f.manifest()).entries[pageId].status === 'recovery_pending');
+  unsupported = false;
+  for (let n = 0; n < 35; n++) await f.tick();
+  const m = await f.manifest();
+  expect(m.entries[pageId].status).toBe('conflict');
+  expect(m.entries[pageId].recoveryEdit.document.markdown).toBe('ACCEPTED SAVE');
+  expect(f.remote.get(pageId).document.markdown).toBe('Original');
+});
