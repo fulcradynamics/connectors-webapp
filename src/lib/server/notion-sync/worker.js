@@ -88,6 +88,7 @@ function converged(entry, notion, fulcra, file) {
   delete entry.conflict;
   delete entry.error;
   delete entry.createdPending;
+  delete entry.recoveryEdit;
 }
 /** @param {any} m @param {any} entry @param {string} id */
 function bindCreated(m, entry, id) {
@@ -370,7 +371,8 @@ export async function advanceNotionSync(
       const id = Object.keys(m.queue)[0],
         edit = m.queue[id],
         e = m.entries[id];
-      let current;
+      let current,
+        unreadable = false;
       try {
         current = await client.latestFile(filePath(e));
       } catch (cause) {
@@ -378,8 +380,9 @@ export async function advanceNotionSync(
         holdEdit(e, edit.document);
         delete m.queue[id];
         finish(m, e);
+        unreadable = true;
       }
-      if (e.recoveryEdit) {
+      if (unreadable) {
         /* The accepted text is held until valid bytes can be reviewed. */
       } else if ((current?.id ?? null) !== edit.expectedRevision) {
         holdEdit(e, edit.document);
@@ -510,10 +513,9 @@ export async function advanceNotionSync(
           finish(m, entry);
         } else {
           const local = file ? decodeDocument(file.content) : null;
-          if (entry.recoveryEdit) {
+          if (entry.recoveryEdit && !entry.conflict) {
             if (local) {
               conflict(m, entry, remote.document, entry.recoveryEdit.document, local);
-              delete entry.recoveryEdit;
             } else {
               holdEdit(entry, entry.recoveryEdit.document);
               finish(m, entry);
@@ -532,7 +534,7 @@ export async function advanceNotionSync(
               local
             )
               decision = 'push';
-            if (entry.status === 'conflict') {
+            if (entry.conflict) {
               const expectedCurrent = entry.conflict?.expectedCurrent;
               if (
                 !expectedCurrent ||
@@ -541,7 +543,10 @@ export async function advanceNotionSync(
               ) {
                 entry.status = 'pending';
                 decision = 'conflict';
-              } else decision = 'hold';
+              } else {
+                entry.status = 'conflict';
+                decision = 'hold';
+              }
             }
             if (resolution) {
               if (
@@ -569,7 +574,8 @@ export async function advanceNotionSync(
               };
               entry.status = 'pending';
             } else if (decision === 'conflict') {
-              if (entry.status !== 'conflict') conflict(m, entry, remote.document, local);
+              if (entry.status !== 'conflict')
+                conflict(m, entry, remote.document, entry.recoveryEdit?.document ?? local, local);
               else finish(m, entry);
             } else {
               if (['noop', 'converge'].includes(decision))
