@@ -1,3 +1,4 @@
+import { indexStatusView } from './index.js';
 import { retainArchivedBody } from './archive-body.js';
 import { randomUUID } from 'node:crypto';
 import { loadManifest, saveManifest, workingFolder } from './state.js';
@@ -57,6 +58,7 @@ export function createDocumentService({
     const m = await manifest();
     return {
       folder: folder(),
+      index: indexStatusView(connection, m),
       discoveryWarnings: m.discoveryWarnings ?? [],
       pending: m.pending ? { kind: m.pending.kind, phase: m.pending.phase } : null,
       queued: Object.keys(m.queue).length,
@@ -166,6 +168,7 @@ export function createDocumentService({
         ];
       } else m.priority = [...new Set([...m.priority, ...Object.keys(m.entries)])];
       m.scanRequested = true;
+      m.indexCheckRequested = true;
       await save(m);
       return { queued: true };
     }

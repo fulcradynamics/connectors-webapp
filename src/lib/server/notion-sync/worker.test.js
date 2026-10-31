@@ -1,4 +1,4 @@
-import { it, expect } from 'vitest';
+import { it, expect, vi } from 'vitest';
 import { createDocumentService } from './service.js';
 import { freshState, nativeStore } from '../native/state.js';
 import { advanceNotionSync } from './worker.js';
@@ -201,6 +201,11 @@ it('pulls with verified bytes, pushes edits and stabilizes without echo writes',
       (await f.manifest()).entries[pageId].status === 'synced'
   );
   expect(f.remote.get(pageId).document.title).toBe('Renamed');
+  await f.until(async () => {
+    const m = await f.manifest(),
+      index = await f.client.latestFile(f.folder + '/index.md');
+    return m.indexStatus?.state === 'current' && index?.content.includes('Renamed');
+  });
   const count = f.calls.length;
   for (let n = 0; n < 15; n++) await f.tick();
   expect(f.calls.length).toBe(count);
@@ -751,4 +756,104 @@ it('holds a recovery conflict through temporary unsupported Notion content witho
   expect(m.entries[pageId].status).toBe('conflict');
   expect(m.entries[pageId].recoveryEdit.document.markdown).toBe('ACCEPTED SAVE');
   expect(f.remote.get(pageId).document.markdown).toBe('Original');
+});
+
+it('publishes a readable index after verified sync and keeps its version on unchanged cycles', async () => {
+  const f = fixture();
+  await initial(f);
+  await f.until(async () => (await f.manifest()).indexStatus?.state === 'current');
+  const path = f.folder + '/index.md',
+    before = await f.client.latestFile(path);
+  expect(before.content).toContain(`[Demo](${pageId}.md)`);
+  expect(before.content).toContain('## Synced');
+  for (let n = 0; n < 35; n++) await f.tick();
+  expect((await f.client.latestFile(path)).id).toBe(before.id);
+  f.remote.get(pageId).document = document('Changed', 'New title', true);
+  await f.until(async () => {
+    const m = await f.manifest(),
+      file = await f.client.latestFile(path);
+    return (
+      m.entries[pageId].status === 'synced' &&
+      m.indexStatus?.state === 'current' &&
+      file?.content.includes('## Archived') &&
+      file.content.includes('New title')
+    );
+  });
+  expect((await f.client.latestFile(path)).id).not.toBe(before.id);
+});
+it('keeps an index failure retryable while a queued page edit still reaches Notion', async () => {
+  const f = fixture();
+  await initial(f);
+  const original = f.client.allocateFile;
+  let indexOffline = true;
+  f.client.allocateFile = async (/** @type {string} */ path, /** @type {string} */ content) => {
+    if (path.endsWith('/index.md') && indexOffline) throw Error('index temporarily unavailable');
+    return original(path, content);
+  };
+  await f.until(async () => (await f.manifest()).indexStatus?.state === 'retry');
+  const file = await f.client.latestFile(f.path);
+  await createDocumentService({
+    store: nativeStore(f.state),
+    connection: f.state.connections[connectionId],
+    crypto,
+    client: f.client,
+    notion: f.notion,
+    credential: {}
+  }).mutate({
+    operation: 'save',
+    id: pageId,
+    expectedRevision: file.id,
+    document: document('Accepted despite index outage')
+  });
+  await f.until(
+    async () =>
+      f.remote.get(pageId).document.markdown === 'Accepted despite index outage' &&
+      (await f.manifest()).entries[pageId].status === 'synced'
+  );
+  indexOffline = false;
+  const m = await f.manifest();
+  m.indexRetryAt = 0;
+  await f.save(m);
+  await f.until(async () => (await f.manifest()).indexStatus?.state === 'current');
+});
+
+it('continues ordinary provider polling while index delivery readback is delayed', async () => {
+  const f = fixture();
+  await initial(f);
+  const latest = f.client.latestFile;
+  let delayed = true;
+  f.client.latestFile = async (/** @type {string} */ path) =>
+    path.endsWith('/index.md') && delayed ? null : latest(path);
+  await f.until(async () => (await f.manifest()).indexPending?.phase === 'verify');
+  const drained = await f.manifest();
+  drained.scan = null;
+  drained.index = 0;
+  drained.priority = [];
+  await f.save(drained);
+  f.remote.get(pageId).document = document('Provider edit during delayed index');
+  let now = Date.now();
+  const clock = vi.spyOn(Date, 'now').mockImplementation(() => now);
+  try {
+    let converged = false;
+    for (let n = 0; n < 100; n++) {
+      now = Math.max(now + 1, f.state.connections[connectionId].nextDue ?? now);
+      await f.tick();
+      if (
+        decodeDocument((await f.client.latestFile(f.path)).content).markdown ===
+        'Provider edit during delayed index'
+      ) {
+        converged = true;
+        break;
+      }
+    }
+    expect(converged).toBe(true);
+    expect((await f.manifest()).indexStatus.state).not.toBe('current');
+    delayed = false;
+    const m = await f.manifest();
+    m.indexRetryAt = 0;
+    await f.save(m);
+    await f.until(async () => (await f.manifest()).indexStatus?.state === 'current');
+  } finally {
+    clock.mockRestore();
+  }
 });

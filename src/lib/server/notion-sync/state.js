@@ -32,6 +32,12 @@ export async function loadManifest(store, connection, crypto) {
       throw Error(
         'Two-way scope configuration changed; use a separate connection for another parent, selection or folder'
       );
+    // Backfill a stable timestamp once; routine successful polls must not churn the index.
+    for (const entry of Object.values(value.entries)) {
+      const e = /** @type {any} */ (entry);
+      if (e.baselineFileId && e.contentUpdatedAt === undefined)
+        e.contentUpdatedAt = e.lastVerified ?? null;
+    }
     return value;
   }
   const entries = Object.fromEntries(
