@@ -1,3 +1,4 @@
+import { advanceNotionSync } from '../notion-sync/worker.js';
 import { env as privateEnv } from '$env/dynamic/private';
 import { env as publicEnv } from '$env/dynamic/public';
 import { stage, unstage, nativeStore } from './state.js';
@@ -107,6 +108,8 @@ export async function advanceWorker(state, dependencies = {}) {
     const provider =
       dependencies.provider ??
       ((/** @type {any} */ connection) => getProviderCredential(store, connection.id, crypto));
+    if (c.connector === 'notion' && c.config.twoWay?.enabled)
+      return advanceNotionSync(state, c, { crypto, client, provider, notion: dependencies.notion });
     if (active.phase === 'read') {
       if (cp.pending) {
         try {
