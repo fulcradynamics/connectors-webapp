@@ -323,9 +323,16 @@
               /></label
             >
             <p>
-              Files go under this path, grouped by stable source revision. For example <code
-                >{folder || '/your-folder'}/revision-id/document</code
-              >. Existing history is retained.
+              {#if twoWayEnabled}
+                Editable working copies go under <code
+                  >{folder || '/your-folder'}/live/{connection.id}/page-id.md</code
+                >. Edit the title, Markdown or archived field there, or use the editor below.
+                Earlier versions are retained.
+              {:else}
+                Files go under this path, grouped by stable source revision. For example <code
+                  >{folder || '/your-folder'}/revision-id/document</code
+                >. Existing history is retained.
+              {/if}
             </p>{/if}
           {#if mode !== 'file'}<label
               >Recordable v1 data type<select bind:value={recordType} onchange={invalidate}
