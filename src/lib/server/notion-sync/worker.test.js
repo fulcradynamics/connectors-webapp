@@ -1,4 +1,5 @@
 import { it, expect } from 'vitest';
+import { createDocumentService } from './service.js';
 import { freshState, nativeStore } from '../native/state.js';
 import { advanceNotionSync } from './worker.js';
 import { loadManifest, saveManifest, workingFolder } from './state.js';
@@ -498,4 +499,174 @@ it('preserves a hidden Notion edit when a cached working copy requests restore',
   await f.until(async () => (await f.manifest()).entries[pageId].status === 'conflict');
   expect(f.remote.get(pageId).document.markdown).toBe('Notion changed before trash');
   expect(f.calls).not.toContain('body');
+});
+
+it('rejects saving over an in-flight pull before accepting user text', async () => {
+  const f = fixture();
+  await initial(f);
+  f.remote.get(pageId).document = document('Remote changed');
+  await f.until(async () => (await f.manifest()).pending?.purpose === 'pull');
+  const file = await f.client.latestFile(f.path);
+  const service = createDocumentService({
+    store: nativeStore(f.state),
+    connection: f.state.connections[connectionId],
+    crypto,
+    client: f.client,
+    notion: f.notion,
+    credential: {}
+  });
+  await expect(
+    service.mutate({
+      operation: 'save',
+      id: pageId,
+      expectedRevision: file.id,
+      document: document('USER EDIT ONLY COPY')
+    })
+  ).rejects.toThrow(/syncing.*wait.*reload/i);
+  expect((await f.manifest()).queue[pageId]).toBeUndefined();
+  await f.until(async () => !(await f.manifest()).pending);
+  const refreshed = await f.client.latestFile(f.path);
+  await expect(
+    createDocumentService({
+      store: nativeStore(f.state),
+      connection: f.state.connections[connectionId],
+      crypto,
+      client: f.client,
+      notion: f.notion,
+      credential: {}
+    }).mutate({
+      operation: 'save',
+      id: pageId,
+      expectedRevision: refreshed.id,
+      document: document('USER EDIT ONLY COPY')
+    })
+  ).resolves.toMatchObject({ queued: true });
+});
+
+for (const phase of ['queued', 'file-guard', 'file-transfer', 'file-verify']) {
+  it(`retains an accepted editor save after a newer working revision at ${phase}`, async () => {
+    const f = fixture();
+    await initial(f);
+    const file = await f.client.latestFile(f.path);
+    const service = createDocumentService({
+      store: nativeStore(f.state),
+      connection: f.state.connections[connectionId],
+      crypto,
+      client: f.client,
+      notion: f.notion,
+      credential: {}
+    });
+    await service.mutate({
+      operation: 'save',
+      id: pageId,
+      expectedRevision: file.id,
+      document: document('Accepted editor text')
+    });
+    if (phase !== 'queued')
+      await f.until(async () => {
+        const p = (await f.manifest()).pending;
+        return p?.purpose === 'edit' && p.phase === phase.slice(5);
+      });
+    f.put(f.path, encodeDocument(document('Later independent file edit')));
+    await f.until(async () => (await f.manifest()).entries[pageId].status === 'conflict');
+    const m = await f.manifest();
+    const retained = decodeDocument(
+      new TextDecoder().decode(
+        await f.client.readFileBytes(m.entries[pageId].conflict.paths[1].fileId)
+      )
+    );
+    expect(retained.markdown).toBe('Accepted editor text');
+    expect(
+      f.files
+        .get(f.path)
+        .some(
+          (/** @type {any} */ file) =>
+            decodeDocument(file.content).markdown === 'Later independent file edit'
+        )
+    ).toBe(true);
+    expect(f.remote.get(pageId).document.markdown).toBe('Original');
+    expect(m.queue[pageId]).toBeUndefined();
+  });
+}
+it('holds accepted text through inaccessible provider and later reviews it without blocking healthy pages', async () => {
+  const f = fixture();
+  f.remote.set(newId, { document: document('Healthy initial'), parent: pageId });
+  await initial(f);
+  await f.until(async () => (await f.manifest()).entries[newId]?.status === 'synced');
+  const file = await f.client.latestFile(f.path);
+  const service = createDocumentService({
+    store: nativeStore(f.state),
+    connection: f.state.connections[connectionId],
+    crypto,
+    client: f.client,
+    notion: f.notion,
+    credential: {}
+  });
+  await service.mutate({
+    operation: 'save',
+    id: pageId,
+    expectedRevision: file.id,
+    document: document('Accepted before access lost')
+  });
+  f.put(f.path, encodeDocument(document('Newer external copy')));
+  f.remote.delete(pageId);
+  f.remote.get(newId).document = document('Healthy after access lost');
+  await f.until(async () => {
+    const file = await f.client.latestFile(f.folder + '/' + newId + '.md');
+    return !!file && decodeDocument(file.content).markdown === 'Healthy after access lost';
+  });
+  expect(JSON.stringify(await f.manifest())).toContain('Accepted before access lost');
+  f.remote.set(pageId, { document: document(), parent: null });
+  await f.until(async () => (await f.manifest()).entries[pageId].status === 'conflict');
+  const m = await f.manifest();
+  expect(
+    decodeDocument(
+      new TextDecoder().decode(
+        await f.client.readFileBytes(m.entries[pageId].conflict.paths[1].fileId)
+      )
+    ).markdown
+  ).toBe('Accepted before access lost');
+});
+for (const failure of ['utf8', 'oversize']) {
+  it(`skips a discovered ${failure} document and continues healthy reconciliation`, async () => {
+    const f = fixture();
+    await initial(f);
+    const invalidPath = f.folder + '/' + newId + '.md';
+    f.put(invalidPath, 'placeholder');
+    const latest = f.client.latestFile;
+    f.client.latestFile = async (/** @type {string} */ path) => {
+      if (path === invalidPath) {
+        if (failure === 'utf8')
+          new TextDecoder('utf-8', { fatal: true }).decode(new Uint8Array([0xc3, 0x28]));
+        throw Error('Working-file content exceeds bound');
+      }
+      return latest(path);
+    };
+    f.remote.get(pageId).document = document('Healthy remote change');
+    await f.until(
+      async () =>
+        decodeDocument((await latest(f.path)).content).markdown === 'Healthy remote change',
+      60
+    );
+    expect((await f.manifest()).entries[newId]).toBeUndefined();
+    expect((await f.manifest()).discoveryWarnings.join(' ')).toMatch(/invalid.*skipped/i);
+  });
+}
+
+it('retains a transient discovered-file read failure for retry instead of skipping it', async () => {
+  const f = fixture();
+  await initial(f);
+  const path = f.folder + '/' + newId + '.md';
+  f.put(path, encodeDocument(document('Valid child')));
+  const latest = f.client.latestFile;
+  let offline = true;
+  f.client.latestFile = async (/** @type {string} */ p) => {
+    if (p === path && offline) throw TypeError('fetch failed');
+    return latest(p);
+  };
+  await f.until(async () => f.state.connections[connectionId].lastError != null);
+  expect((await f.manifest()).entries[newId]).toBeUndefined();
+  expect((await f.manifest()).discoveryWarnings.join(' ')).not.toMatch(/invalid.*skipped/i);
+  offline = false;
+  await f.until(async () => !!(await f.manifest()).entries[newId]);
 });

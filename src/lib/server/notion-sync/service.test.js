@@ -24,6 +24,7 @@ function fixture() {
   };
   state.connections[connection.id] = connection;
   const file = { id: 'version-1', content: encodeDocument(doc), versions: [] };
+  /** @type {{ latestFile: () => Promise<any> }} */
   const client = { latestFile: async () => file };
   const notion = { read: async () => ({ supported: true, document: doc }) };
   const service = createDocumentService({
@@ -201,4 +202,47 @@ it('initializes the first pass with every selected page ready to run', async () 
   const f = fixture();
   const m = await loadManifest(f.store, f.connection, crypto);
   expect(m.priority).toEqual([id]);
+});
+
+it('keeps a held saved edit readable when the working file is missing and blocks replacing it', async () => {
+  const f = fixture(),
+    m = await loadManifest(f.store, f.connection, crypto);
+  m.entries[id].recoveryEdit = { document: { ...doc, markdown: 'Retained accepted text' } };
+  m.entries[id].status = 'recovery_pending';
+  await saveManifest(f.store, f.connection, m, crypto);
+  f.client.latestFile = async () => null;
+  const read = await f.service.read(id);
+  expect(read.document.markdown).toBe('Retained accepted text');
+  expect(read.queued).toBe(true);
+});
+for (const operation of ['save', 'archive', 'resolve']) {
+  it(`rejects ${operation} while that document is syncing`, async () => {
+    const f = fixture(),
+      m = await loadManifest(f.store, f.connection, crypto);
+    m.pending = { kind: 'file', entryId: id, purpose: 'pull', phase: 'guard' };
+    await saveManifest(f.store, f.connection, m, crypto);
+    const action = {
+      operation,
+      id,
+      expectedRevision: 'version-1',
+      ...(operation === 'save'
+        ? { document: doc }
+        : operation === 'archive'
+          ? { archived: true }
+          : { choice: 'notion', conflictId: other, expectedNotion: 'x' })
+    };
+    await expect(f.service.mutate(action)).rejects.toThrow(/syncing.*wait.*reload/i);
+    expect((await loadManifest(f.store, f.connection, crypto)).queue[id]).toBeUndefined();
+  });
+}
+it('keeps held saved text readable when working-file bytes cannot be decoded', async () => {
+  const f = fixture(),
+    m = await loadManifest(f.store, f.connection, crypto);
+  m.entries[id].recoveryEdit = { document: { ...doc, markdown: 'Retained accepted text' } };
+  await saveManifest(f.store, f.connection, m, crypto);
+  f.client.latestFile = async () => {
+    new TextDecoder('utf-8', { fatal: true }).decode(new Uint8Array([0xc3, 0x28]));
+    return null;
+  };
+  expect((await f.service.read(id)).document.markdown).toBe('Retained accepted text');
 });

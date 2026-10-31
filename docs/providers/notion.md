@@ -89,3 +89,12 @@ Use **Archive page** in Fulcra or **Move to Trash** in Notion for recoverable re
 Notion hides Markdown while a page is in Trash. The connector keeps the last verified body in the archived working file and reads the actual body again after restore. If you changed the hidden body before trashing it and then restore an older Fulcra copy, the connector retains a conflict for review instead of overwriting the newly visible text. A trashed page without a verified working copy is skipped until restored.
 
 **Sync now** discovers new children and queues every mapped page for reconciliation. **Sync this page now** prioritizes the open document. Refresh status after the worker has verified the result; a queued action is not a completed sync.
+
+
+### Saves while another change is syncing
+
+If a page is already syncing, Save is rejected before the edit is accepted. Your unsaved text remains in the editor; copy it before reloading, wait for the sync to finish, then reload and reapply it.
+
+An accepted save that races a later working-file revision is retained for review instead of discarded. The page may show `recovery_pending` while access or valid working-file bytes are unavailable. Open it to inspect the retained saved text; restore access or repair the working file, then sync and review the conflict. The Fulcra conflict version contains that saved edit, while existing working-file versions remain retained. Neither version is applied automatically.
+
+Malformed UTF-8, oversized or invalid newly discovered working files are skipped with a warning so healthy pages continue. Correct the file and sync again. Temporary transport failures remain retryable; they are not treated as invalid content.
