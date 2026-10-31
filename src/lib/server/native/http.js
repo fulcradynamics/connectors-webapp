@@ -25,7 +25,16 @@ export async function readSnapshot(runId) {
     return await Promise.race([
       reader.read().then((result) => result.value),
       new Promise((_, reject) => {
-        timer = setTimeout(() => reject(Error('Controller snapshot unavailable')), 8000);
+        timer = setTimeout(() => {
+          try {
+            error(
+              503,
+              'Controller state read is temporarily unavailable; retry the saved operation'
+            );
+          } catch (cause) {
+            reject(cause);
+          }
+        }, 20000);
       })
     ]);
   } finally {
