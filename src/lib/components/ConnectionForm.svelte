@@ -103,7 +103,7 @@
       >Private key<textarea bind:value={privateKey} required autocomplete="off" spellcheck="false"
       ></textarea></label
     >{:else}<label
-      >Read token / API key<input
+      >{connector === 'notion' ? 'Internal connection API token' : 'Read token / API key'}<input
         type="password"
         bind:value={token}
         required

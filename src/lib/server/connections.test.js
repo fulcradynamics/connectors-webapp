@@ -74,3 +74,19 @@ it('unchanged and interval-only edits preserve progress and revision identity', 
   expect(moved.config.routeVersion).toBe(5);
   expect(moved.resetCheckpoint).toBe(true);
 });
+
+it('accepts 23 discovered pages and reports the bounded selection limit separately', () => {
+  const pages = Array.from({ length: 51 }, (_, i) => `page-${i}`);
+  expect(
+    validateConfig({ ...config, resources: pages.slice(0, 23) }, pages, 'owner').resources
+  ).toHaveLength(23);
+  expect(
+    validateConfig({ ...config, resources: pages.slice(0, 50) }, pages, 'owner').resources
+  ).toHaveLength(50);
+  expect(() => validateConfig({ ...config, resources: pages }, pages, 'owner')).toThrow(
+    /at most 50 sources/i
+  );
+  expect(() => validateConfig({ ...config, resources: ['not-shared'] }, pages, 'owner')).toThrow(
+    /discovered sources/i
+  );
+});

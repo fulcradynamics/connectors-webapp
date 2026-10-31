@@ -1,3 +1,4 @@
+import { MAX_SELECTED_SOURCES } from '../../connectors/setup.js';
 /** Structured provider errors never contain bearer tokens or raw response bodies. */
 export class ProviderError extends Error {
   /** @param {number} status @param {string|null} retryAt */
@@ -73,7 +74,7 @@ export function selectedResources(connection) {
   if (
     !Array.isArray(ids) ||
     !ids.length ||
-    ids.length > 20 ||
+    ids.length > MAX_SELECTED_SOURCES ||
     ids.some((id) => typeof id !== 'string' || !id || id.length > 200)
   )
     throw new Error('Selected resources required_configuration');
