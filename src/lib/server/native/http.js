@@ -264,7 +264,13 @@ export async function nativeHTTP(event) {
     }
     return json({ done: false, status }, { headers });
   }
-  const snapshot = await currentSnapshot(owner?.accessToken);
+  const detail = path.match(/^\/api\/connections\/([a-f0-9-]{36})$/i);
+  const needsSnapshot =
+    setup || isWebhook || (method === 'GET' && (path === '/api/connections' || !!detail));
+  // Ordinary commands read and validate authoritative state inside the controller.
+  // Snapshot reads are only needed by the synchronous views and webhook preflight.
+  const snapshot = needsSnapshot ? await currentSnapshot(owner?.accessToken) : null;
+  if (!needsSnapshot && owner) await ensureMarker(owner.accessToken);
   if (setup)
     return json(
       {
@@ -281,7 +287,6 @@ export async function nativeHTTP(event) {
     );
   if (method === 'GET' && path === '/api/connections')
     return json({ connections: Object.values(snapshot.view.connections) }, { headers });
-  const detail = path.match(/^\/api\/connections\/([a-f0-9-]{36})$/i);
   if (method === 'GET' && detail) {
     const c = snapshot.view.connections[detail[1]];
     if (!c) error(404, 'Unknown connection');
