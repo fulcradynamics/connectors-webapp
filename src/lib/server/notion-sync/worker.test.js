@@ -103,9 +103,9 @@ function fixture() {
         .map(([id, p]) => ({ id, title: p.document.title })),
       cursor: null
     }),
-    createMarker: async (/** @type {string} */ parent) => {
+    createMarker: async (/** @type {string} */ parent, /** @type {string} */ localId) => {
       calls.push('create');
-      remote.set(newId, { parent, document: document('', markerTitle(newId)) });
+      remote.set(newId, { parent, document: document('', markerTitle(localId)) });
       if (failCreate) throw Error('lost create response');
       return { id: newId };
     },
@@ -297,8 +297,12 @@ it('reconciles a committed body write after a lost response without another writ
   await initial(f);
   f.put(f.path, encodeDocument(document('Committed body')));
   const original = f.notion.setBody;
-  f.notion.setBody = async (.../** @type {any[]} */ args) => {
-    await original(...args);
+  f.notion.setBody = async (
+    /** @type {any} */ id,
+    /** @type {any} */ before,
+    /** @type {any} */ value
+  ) => {
+    await original(id, before, value);
     throw Error('lost body reply');
   };
   await f.until(
@@ -316,4 +320,114 @@ it('keeps non-expiring baselines encrypted and rejects a changed parent scope', 
   expect(before.entries[pageId].baseline).toBeTruthy();
   f.state.connections[connectionId].config.twoWay.parentId = newId;
   await expect(f.manifest()).rejects.toThrow(/scope configuration/i);
+});
+it('retains an intervening Fulcra version even when the sync upload becomes latest', async () => {
+  const f = fixture();
+  await initial(f);
+  f.client.readFileBytes = async (/** @type {string} */ id) =>
+    new TextEncoder().encode(
+      [...f.files.values()].flat().find((/** @type {any} */ v) => v.id === id).content
+    );
+  f.remote.get(pageId).document = document('Remote change');
+  await f.until(async () => (await f.manifest()).pending?.phase === 'transfer');
+  f.put(f.path, encodeDocument(document('Intervening user edit')));
+  await f.tick();
+  await f.until(async () => (await f.manifest()).entries[pageId].status === 'conflict');
+  const m = await f.manifest(),
+    retained = m.entries[pageId].conflict.paths[1];
+  expect(decodeDocument(f.files.get(retained.path)[0].content).markdown).toBe(
+    'Intervening user edit'
+  );
+  for (let n = 0; n < 15; n++) await f.tick();
+  expect((await f.manifest()).entries[pageId].status).toBe('conflict');
+});
+it('retries a known pre-create guard failure without mistaking it for a sent create', async () => {
+  const f = fixture();
+  await initial(f);
+  f.put(`${f.folder}/${newId}.md`, encodeDocument(document('New', 'Guard retry')));
+  const m = await f.manifest();
+  m.scanRequested = true;
+  await f.save(m);
+  const original = f.client.uploadFile;
+  let failed = false;
+  f.client.uploadFile = async (/** @type {string} */ path, /** @type {string} */ content) => {
+    if (!failed) {
+      failed = true;
+      throw Error('guard upload unavailable');
+    }
+    return original(path, content);
+  };
+  await f.until(async () => (await f.manifest()).entries[newId]?.status === 'synced');
+  expect(f.calls.filter((/** @type {string} */ x) => x === 'create')).toHaveLength(1);
+});
+it('continues healthy mapped pages when a different selected page is inaccessible', async () => {
+  const f = fixture();
+  f.state.connections[connectionId].config.resources.push(newId);
+  f.remote.set(newId, { parent: null, document: document('Healthy page') });
+  f.remote.delete(pageId);
+  await f.until(async () => (await f.manifest()).entries[newId]?.status === 'synced');
+  expect((await f.manifest()).entries[pageId].status).toBe('inaccessible');
+});
+it('reports discovery overflow without blocking existing mapped documents', async () => {
+  const f = fixture();
+  await initial(f);
+  for (let i = 10; i < 60; i++)
+    f.remote.set(String(i).padStart(8, '0') + '-1111-4111-8111-111111111111', {
+      parent: pageId,
+      document: document('Child ' + i)
+    });
+  const m = await f.manifest();
+  m.scanRequested = true;
+  await f.save(m);
+  const child = '00000010-1111-4111-8111-111111111111';
+  await f.until(async () => (await f.manifest()).entries[child]?.status === 'synced', 150);
+  expect(Object.keys((await f.manifest()).entries)).toHaveLength(50);
+  expect((await f.manifest()).discoveryWarnings.length).toBeGreaterThan(0);
+});
+it('keeps malformed working files from blocking healthy page updates', async () => {
+  const f = fixture();
+  await initial(f);
+  f.put(`${f.folder}/${newId}.md`, 'not a valid working file');
+  f.remote.get(pageId).document.markdown = 'Still progresses';
+  const m = await f.manifest();
+  m.scanRequested = true;
+  await f.save(m);
+  await f.until(
+    async () =>
+      decodeDocument(f.files.get(f.path)[0].content).markdown === 'Still progresses' &&
+      (await f.manifest()).entries[pageId].status === 'synced'
+  );
+  expect((await f.manifest()).discoveryWarnings.length).toBeGreaterThan(0);
+});
+it('binds deferred creation markers to the original local ID when provider IDs differ', async () => {
+  const f = fixture();
+  await initial(f);
+  const localId = '44444444-4444-4444-8444-444444444444';
+  f.put(
+    `${f.folder}/${localId}.md`,
+    encodeDocument(document('Distinct IDs', 'Distinct created page'))
+  );
+  let m = await f.manifest();
+  m.scanRequested = true;
+  await f.save(m);
+  const children = f.notion.children;
+  let missed = false;
+  f.notion.children = async (/** @type {string} */ parent) => {
+    const current = await f.manifest();
+    if (!missed && current.pending?.kind === 'create' && current.pending.phase === 'recover') {
+      missed = true;
+      return { pages: [], cursor: null };
+    }
+    return children(parent);
+  };
+  f.failCreate = true;
+  await f.until(async () => (await f.manifest()).pending?.phase === 'recover');
+  f.failCreate = false;
+  await f.until(async () => (await f.manifest()).entries[localId]?.status === 'synced');
+  m = await f.manifest();
+  expect(
+    Object.values(m.entries).filter((/** @type {any} */ e) => e.notionId === newId)
+  ).toHaveLength(1);
+  expect(m.entries[localId].notionId).toBe(newId);
+  expect(f.remote.get(newId).document.title).toBe('Distinct created page');
 });

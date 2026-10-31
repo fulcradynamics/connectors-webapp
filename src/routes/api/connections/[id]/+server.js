@@ -3,6 +3,7 @@ import { env } from '$env/dynamic/public';
 import { ownerRuntime, ownedConnection, bodyJSON, configurationAction } from '$lib/server/api';
 import { configurationUpdate } from '$lib/server/connections';
 import { validateRoute } from '$lib/server/sync/sinks';
+import { loadManifest } from '$lib/server/notion-sync/state';
 import { FulcraClient } from '$lib/server/fulcra';
 /** @type {import('./$types').RequestHandler} */
 export async function GET(event) {
@@ -15,7 +16,7 @@ export async function GET(event) {
 }
 /** @type {import('./$types').RequestHandler} */
 export async function PUT(event) {
-  const { store, owner } = await ownerRuntime(event, true),
+  const { store, owner, crypto } = await ownerRuntime(event, true),
     connection = await ownedConnection(store, event.params.id),
     input = await bodyJSON(event.request);
   return configurationAction(async () => {
@@ -27,6 +28,12 @@ export async function PUT(event) {
       owner.userId
     );
 
+    if (config.twoWay) {
+      if (connection.connector !== 'notion' || !store.supportsTwoWay)
+        throw Error('Two-way configuration requires Notion and the native Workflow backend');
+      if (await store.getGrant('notion-sync:' + connection.id))
+        await loadManifest(store, { ...connection, config }, crypto);
+    }
     const client = new FulcraClient({
       endpoint: env.PUBLIC_FULCRA_API_ENDPOINT,
       accessToken: owner.accessToken

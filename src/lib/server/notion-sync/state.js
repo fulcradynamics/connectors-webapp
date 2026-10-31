@@ -58,6 +58,11 @@ export async function loadManifest(store, connection, crypto) {
 /** Non-expiring encrypted manifest. Expiring staging is not a durable convergence baseline.
  * @param {any} store @param {any} connection @param {any} value @param {any} crypto */
 export async function saveManifest(store, connection, value, crypto) {
+  const notionIds = Object.values(value.entries)
+    .map((/** @type {any} */ e) => e.notionId)
+    .filter(Boolean);
+  if (new Set(notionIds).size !== notionIds.length)
+    throw Error('Two-way mapping configuration is not unique');
   if (
     Object.keys(value.entries).length > 50 ||
     Buffer.byteLength(JSON.stringify(value)) > 512 * 1024

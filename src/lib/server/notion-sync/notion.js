@@ -33,6 +33,7 @@ export function createNotionPages({ fetchImpl = fetch } = {}) {
       .join('');
     const { data } = await req(`pages/${id}/markdown?markdown_version=v2`);
     const supported =
+      (titleText || 'Untitled').length <= 200 &&
       typeof data.markdown === 'string' &&
       !data.truncated &&
       !data.unknown_block_ids?.length &&
