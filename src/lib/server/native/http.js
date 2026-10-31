@@ -18,12 +18,27 @@ const context = (/** @type {string} */ kind) =>
 /** @type {string|undefined} */ let initialRunId = env.CONNECTORS_NATIVE_ROOT_RUN_ID || undefined;
 /** @param {string} runId @returns {Promise<any>} */
 export async function readSnapshot(runId) {
-  const stream = getRun(runId).getReadable({ namespace: 'state', startIndex: -1 });
-  const reader = stream.getReader();
+  const run = getRun(runId);
+  const reading = {
+    reader: /** @type {ReadableStreamDefaultReader<any> | undefined} */ (undefined)
+  };
   let timer;
+  let stopped = false;
   try {
     return await Promise.race([
-      reader.read().then((result) => result.value),
+      (async () => {
+        // Negative offsets disable the SDK's interrupted-stream recovery. Resolve the
+        // retained tail once, then read its absolute position with recovery enabled.
+        const tail = await run.getReadable({ namespace: 'state' }).getTailIndex();
+        if (stopped) return;
+        if (tail < 0)
+          error(503, 'Controller has no published state; preserve its run for recovery');
+        reading.reader = run.getReadable({ namespace: 'state', startIndex: tail }).getReader();
+        const result = await reading.reader.read();
+        if (!result.value)
+          error(503, 'Controller state is unavailable; preserve its run for recovery');
+        return result.value;
+      })(),
       new Promise((_, reject) => {
         timer = setTimeout(() => {
           try {
@@ -38,8 +53,9 @@ export async function readSnapshot(runId) {
       })
     ]);
   } finally {
+    stopped = true;
     clearTimeout(timer);
-    await reader.cancel().catch(() => {});
+    await reading.reader?.cancel().catch(() => {});
   }
 }
 /** @param {string} accessToken */
