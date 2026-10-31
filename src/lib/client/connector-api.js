@@ -61,7 +61,7 @@ export async function connectorRequest(
         if (
           response.status >= 500 &&
           attempt === 0 &&
-          (init.method === 'GET' ||
+          ((init.method ?? 'GET') === 'GET' ||
             /^\/api\/connections\/[a-f0-9-]{36}\/documents(?:\?|$)/i.test(path))
         ) {
           // Document mutations require the deduplicated Workflow backend. Other writes may not.
