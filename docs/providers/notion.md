@@ -6,7 +6,7 @@ The default mode makes **one-way copies from Notion into your Fulcra account**. 
 
 1. Open the [Notion connection console](https://app.notion.com/developers/connections) while signed into the workspace you want to import.
 2. Under **Build → Internal connections**, choose **Create a new connection**, enter a name and select the workspace. You must be a workspace owner. If you already created an internal connection, open it instead.
-3. In **Configuration → Capabilities**, turn **Read content** on. Turn **Update content**, **Insert content**, comment access and agent access off. Choose **No user information**. This app needs no Notion write permission.
+3. In **Configuration → Capabilities**, turn **Read content** on. Turn **Update content**, **Insert content**, comment access and agent access off. Choose **No user information**. The default one-way mode needs no Notion write permission. Enable the additional capabilities only when opting into two-way mode below.
 
 ## 2. Give it access to content
 
@@ -52,10 +52,10 @@ Fixtures verify nested/paginated traversal, version headers, unsupported-block v
 
 ## Optional two-way page sync
 
-Two-way mode synchronizes **page title, Notion-flavored Markdown content and recoverable archive/restore**. It also creates pages in either direction. It currently requires the native Workflow backend and file output. Other database properties, comments and binary attachment replication are outside this version.
+Two-way mode synchronizes **page title, supported page text and recoverable archive/restore**. Complete Markdown pages keep the Markdown editor; mixed pages use protected-block mode, described below. It also creates pages in either direction. It currently requires the native Workflow backend and file output. Other database properties, comments and binary attachment replication are outside this version.
 
 1. In the existing Notion connection's **Configuration → Capabilities**, enable **Read content**, **Update content** and **Insert content**. Leave comments, user information and agent access off. The connection must have access to your selected pages and the creation parent.
-2. In this app's **Sources**, discover/select pages, check **Enable two-way Notion ↔ Fulcra sync**, then choose one selected **Creation parent page**. New pages from Fulcra are created as children there; new Notion child pages under that parent are discovered automatically. Other database membership is not automatically expanded.
+2. In this app's **Sources**, discover/select pages, check **Enable two-way Notion ↔ Fulcra sync**, then choose one selected **Creation parent page**. New pages from Fulcra are created as children there; new Notion child pages under that parent are discovered automatically. Other database membership is not automatically expanded. Automatically discovered and Fulcra-created children must remain directly under the selected creation parent; moving one elsewhere quarantines its sync and retains pending edits. Move it back to recover, or use a separate connection with explicitly selected scope. Explicitly selected pages follow their selected page IDs after a move.
 3. Review the file destination and schedule, **Save and preview output**, confirm the write scope, then enable. Preview reads samples and performs no writes. The creation parent, initial selected scope and folder are bound to this connection's mapping; create a separate connection for a different scope. Existing one-way history remains.
 4. Open **Two-way Notion pages**. **New page**, **Save and sync**, **Archive page**, **Restore page** and **Sync this page now** queue durable work. **Refresh status** lists progress; **Reload document** obtains the current verified working version before another edit.
 5. You may also edit the working files using Fulcra tools. They live at `<chosen-folder>/live/<connection-UUID>/<document-UUID>.md`. Keep the strict metadata header; do not add page IDs or routing fields:
@@ -75,12 +75,22 @@ Two-way mode synchronizes **page title, Notion-flavored Markdown content and rec
 6. A new UUID-named working file becomes a new Notion child under the creation parent. Set `archived: true` to request a recoverable archive, and `false` to restore. Deleting a file or losing Notion access does **not** delete a page. Internal `.sync` and `.conflicts` files are protocol/evidence files, not working documents; leave them intact.
 7. If both sides change since the last verified version, the app retains the conflicting copies and shows **Use Notion version** / **Use Fulcra version**. Review both, then choose. A newer edit invalidates an old resolution; sync/reload and review again. No timestamp winner is chosen automatically.
 
-The bound is **50 mapped pages and 24 KiB of editable Markdown per page**, with titles up to 200 characters. Incomplete, oversized or unsupported Markdown exports remain read-only. The API can normalize Markdown syntax; verified server content is copied back into the working file so unchanged cycles stabilize.
+The bound is **50 mapped pages and 24 KiB of editable Markdown per page**, with titles up to 200 characters. An incomplete Markdown export can use protected-block mode when the complete block tree fits its bounds. Oversized or genuinely unsupported page structures remain read-only with a reason. The API can normalize Markdown syntax; verified server content is copied back into the working file so unchanged cycles stabilize.
 
 Each write has a retained intent and readback. New Notion pages can briefly appear with a `Fulcra sync …` recovery title before receiving their final title/body. A lost creation reply is recovered by that marker; the app does not blindly issue another create. A creation that cannot be proven remains explicitly uncertain for inspection.
 
-Conflict checks cover the final preflight and retained Fulcra versions. **Notion does not provide a documented atomic conditional update for titles or empty bodies**: an edit in the small interval after preflight and before that API write can still be overwritten. This is not an atomic transaction across the two services. Normal detected conflicts and readback mismatches are retained for resolution.
+Conflict checks cover the final preflight and retained Fulcra versions. **Notion does not provide a documented atomic conditional update for page or block writes**: an edit in the small interval after preflight and before that API write can still be overwritten. This is not an atomic transaction across the two services. Normal detected conflicts and readback mismatches are retained for resolution.
 Official references: [internal connections](https://developers.notion.com/guides/get-started/internal-connections), [search indexing and limitations](https://developers.notion.com/reference/search-optimizations-and-limitations), [block children](https://developers.notion.com/reference/get-block-children), [versioning](https://developers.notion.com/reference/versioning).
+
+### Mixed pages: templates, embeds and other protected blocks
+
+When Notion cannot export a complete Markdown document, the connector reads the complete block tree before offering protected-block mode. **Two-way Notion pages → open the page** shows **Block N text M** fields for existing top-level text blocks. Edit the text and choose **Save and sync**. Formatting and links stay unchanged. Templates, embeds, previews, nested containers and non-text runs remain in Notion and are preserved; change their contents, formatting or layout in Notion, then sync and reload.
+
+The working file keeps the normal title/archive header. Its body uses a versioned `fulcra-notion-managed` JSON envelope containing the ordered block bindings, editable `texts`, style metadata and protected snapshots. Tools may change strings inside existing editable `texts` only. Keep the page/block IDs, order, type, styles, attributes and snapshots unchanged. Do not use this envelope to create a page or convert an ordinary Markdown page. The server validates the provider-owned structure before every write and applies one text block per retained phase; it never rebuilds an opaque block from its snapshot.
+
+Protected content participates in conflict detection, including nested changes. **Use Fulcra version** selects the retained editable text while preserving current protected snapshots, after the current versions have been reviewed. A changed block layout, formatting or text-run correspondence requires **Use Notion version**, followed by reapplying the desired text to the new structure. Both conflict copies stay retained.
+
+The complete protected projection is bounded to **160 blocks, 16 child-list requests, 8 nested levels and 24 KiB of body JSON**. Each text run is at most 2,000 UTF-16 code units. These are connector bounds. A failed read or exceeded bound never becomes a truncated writable copy. The normal 50-page and 200-character title bounds still apply. Some pages can contain no supported editable top-level text; their title and recoverable archive remain available, and protected content is edited in Notion.
 
 ### Trash and restore
 
@@ -89,7 +99,6 @@ Use **Archive page** in Fulcra or **Move to Trash** in Notion for recoverable re
 Notion hides Markdown while a page is in Trash. The connector keeps the last verified body in the archived working file and reads the actual body again after restore. If you changed the hidden body before trashing it and then restore an older Fulcra copy, the connector retains a conflict for review instead of overwriting the newly visible text. A trashed page without a verified working copy is skipped until restored.
 
 **Sync now** discovers new children and queues every mapped page for reconciliation. **Sync this page now** prioritizes the open document. Refresh status after the worker has verified the result; a queued action is not a completed sync.
-
 
 ### Saves while another change is syncing
 

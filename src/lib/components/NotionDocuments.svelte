@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { parseManaged, encodeManaged } from '$lib/notion-managed.js';
   import { connectorRequest } from '$lib/client/connector-api.js';
   let { connectionId, active = false }: { connectionId: string; active?: boolean } = $props();
   let listing = $state<any>(null),
@@ -14,6 +15,24 @@
     queued = $state(false);
   let message = $state('');
   const endpoint = $derived(`/api/connections/${connectionId}/documents`);
+  let managed = $state<any>(null),
+    managedValid = $state(true);
+  function changeManagedText(blockIndex: number, textIndex: number, value: string) {
+    if (!managed) return;
+    managed.blocks[blockIndex].texts[textIndex] = value;
+    dirty = true;
+    try {
+      markdown = encodeManaged($state.snapshot(managed));
+      managedValid = true;
+      message = '';
+    } catch (error) {
+      managedValid = false;
+      message =
+        error instanceof Error
+          ? error.message
+          : 'Text exceeds the supported page size. Shorten the draft before saving.';
+    }
+  }
   async function api(query = '', body?: any) {
     return connectorRequest(
       endpoint + query,
@@ -49,7 +68,10 @@
     }
     await act(async () => {
       const result = await api('?document=' + encodeURIComponent(id));
+      const projection = parseManaged(result.document.markdown);
       opened = result;
+      managed = projection;
+      managedValid = true;
       title = result.document.title;
       markdown = result.document.markdown;
       archived = result.document.archived;
@@ -129,6 +151,8 @@
     versions = null;
     title = '';
     markdown = '';
+    managed = null;
+    managedValid = true;
     archived = false;
     creating = true;
     dirty = false;
@@ -155,7 +179,9 @@
   </div>
   {#if message}<p role="status">{message}</p>{/if}
   {#if listing}
-    {#each listing.discoveryWarnings ?? [] as warning}<p role="status">{warning}</p>{/each}
+    {#each listing.discoveryWarnings ?? [] as warning (warning)}<p role="status">
+        {warning}
+      </p>{/each}
     <p>Working copies: <code>{listing.folder}</code></p>
     {#if listing.index}
       <p>Agent index: <code>{listing.index.path}</code> · {listing.index.state}.</p>
@@ -171,7 +197,7 @@
         : ''}
     </p>
     <div class="document-list">
-      {#each listing.documents as doc}
+      {#each listing.documents as doc (doc.id)}
         <div class="document-row">
           <button disabled={busy || doc.status === 'unsupported'} onclick={() => open(doc.id)}
             >{doc.title}</button
@@ -228,19 +254,50 @@
             oninput={() => (dirty = true)}
           /></label
         >
-        <label
-          >Page Markdown<textarea
-            aria-label="Page Markdown"
-            bind:value={markdown}
-            disabled={busy || queued || !active}
-            oninput={() => (dirty = true)}
-          ></textarea></label
-        >
-        <p>
-          Notion-flavored Markdown. Up to 24 KiB per page. Current state: {archived
-            ? 'archived'
-            : 'active'}.
-        </p>
+        {#if managed}
+          <p>
+            Some content is preserved in Notion. Edit text below; use Notion to change embedded
+            content, templates, formatting or page layout.
+          </p>
+          <div class="managed-blocks">
+            {#each managed.blocks as block, blockIndex (block.id)}
+              {#if block.editable}
+                {#each block.texts as text, textIndex (textIndex)}
+                  <label
+                    >{block.type.replaceAll('_', ' ')}
+                    {blockIndex + 1}, text {textIndex + 1}
+                    <textarea
+                      aria-label={`Block ${blockIndex + 1} text ${textIndex + 1}`}
+                      value={text}
+                      maxlength="2000"
+                      disabled={busy || queued || !active}
+                      oninput={(event) =>
+                        changeManagedText(blockIndex, textIndex, event.currentTarget.value)}
+                    ></textarea>
+                  </label>
+                {/each}
+              {:else}<p>{block.type.replaceAll('_', ' ')} · preserved in Notion</p>{/if}
+            {/each}
+          </div>
+          <p>
+            Text formatting and protected content are retained. Up to 2,000 characters per text
+            field. Current state: {archived ? 'archived' : 'active'}.
+          </p>
+        {:else}
+          <label
+            >Page Markdown<textarea
+              aria-label="Page Markdown"
+              bind:value={markdown}
+              disabled={busy || queued || !active}
+              oninput={() => (dirty = true)}
+            ></textarea></label
+          >
+          <p>
+            Notion-flavored Markdown. Up to 24 KiB per page. Current state: {archived
+              ? 'archived'
+              : 'active'}.
+          </p>
+        {/if}
         {#if archived}<p>
             The archived body is the last verified text. Notion’s current body is read again after
             restore.
@@ -248,7 +305,12 @@
         <div class="actions">
           <button
             class="primary"
-            disabled={busy || queued || !active || !title.trim() || (!creating && !dirty)}
+            disabled={busy ||
+              queued ||
+              !active ||
+              !managedValid ||
+              !title.trim() ||
+              (!creating && !dirty)}
             onclick={save}>{creating ? 'Create and sync page' : 'Save and sync'}</button
           >
           {#if opened?.revision}<button
@@ -380,6 +442,9 @@
     min-height: 230px;
     font-family: monospace;
     line-height: 1.5;
+  }
+  .managed-blocks textarea {
+    min-height: 90px;
   }
   .conflict-versions {
     display: grid;

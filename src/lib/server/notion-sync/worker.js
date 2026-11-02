@@ -1,16 +1,11 @@
+import { isManaged, validateManagedEdit, planManagedEdit } from '../../notion-managed.js';
 import { prepareIndex, advanceIndex, indexStatusView } from './index.js';
 import { retainArchivedBody } from './archive-body.js';
 import { randomUUID } from 'node:crypto';
 import { nativeStore } from '../native/state.js';
-import { createNotionPages, markerTitle, pageId } from './notion.js';
+import { createNotionPages, markerTitle, pageId, assertNotionPageScope } from './notion.js';
 import { loadManifest, saveManifest, workingFolder } from './state.js';
-import {
-  encodeDocument,
-  decodeDocument,
-  documentHash,
-  decideSync,
-  normalizeDocument
-} from './document.js';
+import { encodeDocument, decodeDocument, documentHash, decideSync } from './document.js';
 import { contentHash } from '../sync/identity.js';
 /** @param {any} e */
 const filePath = (e) => e.folder + '/' + e.localId + '.md';
@@ -129,8 +124,16 @@ export async function advanceNotionSync(
   let retryDelay = 15000;
   let currentEntryId = m.pending?.entryId ?? null;
   m.discoveryWarnings ??= [];
-  const readRemote = async (/** @type {any} */ entry, /** @type {any} */ credential) =>
-    retainArchivedBody(await notion.read(entry.notionId, credential), entry, client, m.pending);
+  const readRemote = async (/** @type {any} */ entry, /** @type {any} */ credential) => {
+    const remote = await notion.read(
+      entry.notionId,
+      credential,
+      undefined,
+      entry.origin === 'selected' ? null : connection.config.twoWay.parentId
+    );
+    assertNotionPageScope(connection, entry, remote);
+    return retainArchivedBody(remote, entry, client, m.pending);
+  };
   const warn = (/** @type {string} */ message) => {
     if (!m.discoveryWarnings.includes(message))
       m.discoveryWarnings = [...m.discoveryWarnings, message].slice(-10);
@@ -372,11 +375,15 @@ export async function advanceNotionSync(
       if (!file || documentHash(decodeDocument(file.content)) !== p.sourceHash) {
         if (file) conflict(m, entry, actual, decodeDocument(file.content));
         else {
-          entry.status = 'missing';
+          holdEdit(entry, desired);
           finish(m, entry);
         }
       } else {
         const expected = p.expected;
+        if (isManaged(expected.markdown) || isManaged(desired.markdown))
+          validateManagedEdit(expected.markdown, desired.markdown);
+        if (isManaged(actual.markdown) && !remote.managed && !remote.bodyUnavailable)
+          throw Error('Invalid managed provider projection');
         const same = (/** @type {any} */ a, /** @type {any} */ b) =>
           documentHash(a) === documentHash(b);
         let recognized = same(actual, expected);
@@ -397,6 +404,13 @@ export async function advanceNotionSync(
           p.expected = { ...expected, markdown: desired.markdown };
           recognized = true;
         }
+        if (!recognized && p.phase === 'body' && isManaged(expected.markdown)) {
+          const next = planManagedEdit(expected.markdown, desired.markdown);
+          if (next && same(actual, { ...expected, markdown: next.intermediate })) {
+            p.expected = { ...expected, markdown: next.intermediate };
+            recognized = true;
+          }
+        }
         if (
           !recognized &&
           ['restore', 'archive'].includes(p.phase) &&
@@ -408,7 +422,12 @@ export async function advanceNotionSync(
         if (!recognized) conflict(m, entry, actual, decodeDocument(file.content));
         else if (p.phase === 'guard') p.phase = 'restore';
         else if (p.phase === 'restore') {
-          if (p.expected.archived && !desired.archived) {
+          if (
+            p.expected.archived &&
+            (!desired.archived ||
+              p.expected.markdown !== desired.markdown ||
+              p.expected.title !== desired.title)
+          ) {
             await notion.setArchived(entry.notionId, false, credential);
             p.expected.archived = false;
           }
@@ -425,9 +444,16 @@ export async function advanceNotionSync(
               entry.notionId,
               p.expected.markdown,
               desired.markdown,
-              credential
+              credential,
+              undefined,
+              remote
             );
-          p.phase = 'archive';
+          if (
+            p.expected.markdown === desired.markdown ||
+            (isManaged(p.expected.markdown) &&
+              !planManagedEdit(p.expected.markdown, desired.markdown))
+          )
+            p.phase = 'archive';
         } else if (p.phase === 'archive') {
           if (p.expected.archived !== desired.archived) {
             await notion.setArchived(entry.notionId, desired.archived, credential);
@@ -575,7 +601,9 @@ export async function advanceNotionSync(
         delete entry.deferred;
       } else if (!entry.notionId) {
         if (file) {
-          decodeDocument(file.content);
+          const candidate = decodeDocument(file.content);
+          if (isManaged(candidate.markdown))
+            throw Error('Invalid managed document: new pages require ordinary Markdown');
           m.pending = { kind: 'create', entryId: id, operationId: randomUUID(), phase: 'create' };
         } else {
           entry.status = 'missing';
@@ -585,7 +613,11 @@ export async function advanceNotionSync(
         const remote = await readRemote(entry, credential);
         if (!remote.supported) {
           if (entry.recoveryEdit) holdEdit(entry, entry.recoveryEdit.document);
-          else entry.status = 'unsupported';
+          else {
+            entry.status = 'unsupported';
+            entry.error =
+              remote.unsupportedReason ?? 'Notion page representation is incomplete or unsupported';
+          }
           entry.title = remote.document.title;
           finish(m, entry);
         } else {
@@ -691,7 +723,14 @@ export async function advanceNotionSync(
             )
           ? message
           : 'Two-way sync retry pending; retained operation will be reconciled';
-    if (status === 404 && currentEntryId) {
+    if (/** @type {any} */ (cause)?.code === 'NOTION_SCOPE_MOVED' && currentEntryId) {
+      const failed = m.entries[currentEntryId];
+      if (m.pending?.kind === 'notion') holdEdit(failed, m.pending.desired);
+      else if (m.pending) failed.deferred = m.pending;
+      failed.status = 'quarantined';
+      failed.error = message;
+      finish(m, failed);
+    } else if (status === 404 && currentEntryId) {
       const failed = m.entries[currentEntryId];
       if (failed.recoveryEdit) holdEdit(failed, failed.recoveryEdit.document);
       else {
@@ -707,7 +746,7 @@ export async function advanceNotionSync(
     } else if (
       currentEntryId &&
       (invalidFileRead(cause) ||
-        /^(Invalid working-file|Invalid document|Invalid archive|Invalid Markdown|Choose a title|Markdown exceeds)/.test(
+        /^(Invalid working-file|Invalid document|Invalid managed|Invalid archive|Invalid Markdown|Choose a title|Markdown exceeds)/.test(
           message
         ))
     ) {
