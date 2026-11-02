@@ -286,3 +286,15 @@ it('reconciles and replaces an expired transfer receipt without retaining an unu
   expect(f.allocations).toBe(2);
   expect(f.latest.content).toBe(renderIndex(connection, m).content);
 });
+
+it('lists quarantined pages and retained intervening working-file evidence as attention', () => {
+  const e = {
+    ...entry(),
+    status: 'quarantined',
+    recoveryEdit: { document: {}, interveningFileId: b }
+  };
+  const rendered = renderIndex(connection, { entries: { [a]: e } }).content;
+  expect(rendered).toContain('## Needs attention');
+  expect(rendered).toContain('Intervening working-file revision retained');
+  expect(rendered).toContain(b);
+});

@@ -6,6 +6,7 @@ export const indexPath = (connection) => workingFolder(connection) + '/index.md'
 /** Provider labels are data, including Markdown/HTML syntax and control characters.
  * @param {any} value */
 function text(value) {
+  // eslint-disable-next-line no-control-regex -- Deliberately strip control characters from untrusted labels.
   return [...String(value ?? '').replace(/[\x00-\x1f\x7f]/g, ' ')]
     .slice(0, 120)
     .join('')
@@ -47,6 +48,7 @@ export function renderIndex(connection, manifest) {
                 'invalid',
                 'edit_stale',
                 'recovery_pending',
+                'quarantined',
                 'creation_uncertain'
               ].includes(status)
             ? 'Needs attention'
@@ -61,7 +63,10 @@ export function renderIndex(connection, manifest) {
       : ' No verified working copy.';
     if (verified && entry.contentUpdatedAt)
       line += ` Copy updated: ${text(entry.contentUpdatedAt)}.`;
-    if (entry.recoveryEdit) line += ' Accepted editor text is retained for reviewed recovery.';
+    if (entry.recoveryEdit || entry.acceptedEdit)
+      line += ' Accepted editor text is retained for reviewed recovery.';
+    if (entry.recoveryEdit?.interveningFileId)
+      line += ` Intervening working-file revision retained for review in the app: ${text(entry.recoveryEdit.interveningFileId)}.`;
     for (const ref of entry.conflict?.paths ?? []) {
       const relative =
         typeof ref.path === 'string' && ref.path.startsWith(folder + '/')
