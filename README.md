@@ -17,6 +17,7 @@ Start with the [reference app](https://connectors.my.fulcra.ai), or fork this re
 | Asana     | Selected projects' tasks and changes      | Event cursors and periodic reconciliation            |
 | GitHub    | Issues, PR metadata and issue comments    | Repository selection, pagination, token/App auth     |
 | Notion    | Selected pages and nested blocks          | Resumable document traversal                         |
+| Attio     | Exact People/Companies fields and notes   | Approved typed edits and linked note revisions       |
 | Slack     | Selected messages and threads             | History cursors, rate limits, signed event hints     |
 
 These are working example adapters with synthetic tests, not promises to mirror every feature of each service. Read each [provider guide](docs/user-guide.md#connect-a-service) for supported data, permissions and limits. Google connectors are outside the current examples.
@@ -38,7 +39,7 @@ FULCRA_PROJECT_NAME=your-name FULCRA_EXPECTED_DOMAIN=your-name.my.fulcra.ai node
 
 Fork on GitHub first, then use your fork's URL. The deploy command handles native background state and scheduling through Fulcra's hosting. You do not need a separate database, cron service or Vercel account. Read [setup and recovery](docs/setup.md) before deploying or updating an existing app.
 
-Sign in at `/login`, open `/app`, allow background access, and connect a service. Each connector has direct credential-creation links and setup steps. Select sources, choose a folder and/or v1 data type, set the schedule, and review the preview before enabling it. Default proposals are every 5 minutes, seven days of initial history and files under `/connectors/SERVICE`; nothing starts automatically.
+Sign in at `/login`, open `/app`, allow background access, and connect a service. Each connector has direct credential-creation links and setup steps. Select sources, choose a folder and/or v1 data type, set the schedule, and review the preview before enabling it. Default proposals are every 5 minutes, seven days of initial history (30 days for Attio notes) and files under `/connectors/SERVICE`; nothing starts automatically.
 
 ## Use it, change it, contribute
 
@@ -62,6 +63,6 @@ npm run check
 npm run build
 ```
 
-`npm run test:examples` runs only the six adapters. Tests use synthetic data; they do not require provider credentials. Browser checks and the optional PostgreSQL test path are documented in [contributing](CONTRIBUTING.md).
+`npm run test:examples` runs only the seven adapters. Tests use synthetic data; they do not require provider credentials. Browser checks and the optional PostgreSQL test path are documented in [contributing](CONTRIBUTING.md).
 
 MIT licensed. Based on the [Fulcra Svelte app starter](https://github.com/fulcradynamics/app-template-svelte) and [Fulcra app-building skill](https://github.com/fulcradynamics/agent-skills).

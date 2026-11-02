@@ -1,7 +1,40 @@
 export const MAX_SELECTED_SOURCES = 50;
+/** @param {string} connector */
+export function getSourceLimit(connector) {
+  return connector === 'attio' ? 1000 : MAX_SELECTED_SOURCES;
+}
 /** @typedef {{name:string,credentialUrl:string|null,credentialLink:string,credentialNote?:string,additionalCredentialLinks?:Array<{url:string,label:string}>,setupUrl:string,setupLink:string,credentialSteps:string[],scopes:string,sourceLabel:string,sourceHelp:string,sourceTroubleshooting?:string,output:string,backfillHelp:string,limitations:string,accountHint?:string}} ConnectorSetup */
 /** @type {Record<string,ConnectorSetup>} */
 const providers = {
+  attio: {
+    name: 'Attio',
+    credentialUrl: null,
+    credentialLink: 'Create or manage an Attio access token',
+    credentialNote:
+      'Create tokens inside your workspace: Workspace settings → Developers. There is no universal token-creation URL.',
+    setupUrl: 'https://attio.com/help/reference/apps/generating-an-api-key',
+    setupLink: 'Attio API key creation and management help',
+    credentialSteps: [
+      'As a workspace admin, open the dropdown beside your Attio workspace name → Workspace settings → Developers → Create access token.',
+      'Enter a token Name. Set Records to Read (one-way) or Read-write (two-way), Object Configuration to Read, and Notes to Read (import) or Read-write (linked revisions) only when including notes. Leave other permissions Disabled, review, then click Save.',
+      'Copy the access token from Developers and paste it only into the protected Attio workspace access token field here. Never put the token in chat, documents or source. Verification binds this connection to its workspace and does not enable collection.',
+      'To change scopes or revoke access later, return to Workspace settings → Developers → the token’s three-dot menu → Edit or Delete. Tokens are available on all plans and require an admin to manage.',
+      'Select exact People or Companies records next. For optional two-way sync, explicitly approve writable fields for each object and optionally include linked note revisions. Review Destination, Schedule and preview before enabling.'
+    ],
+    scopes:
+      'One-way record import: object_configuration:read and record_permission:read. Two-way selected fields also need record_permission:read-write. Optional notes need note:read for import or note:read-write for linked revisions. Do not grant schema, list, user, task or workspace write scopes.',
+    sourceLabel: 'People / Companies records',
+    sourceHelp:
+      'Select exact existing People or Companies records, up to 1,000 per connection. Selecting one record does not select its object or future records. Writable attribute choices apply per object only to these selected records.',
+    sourceTroubleshooting:
+      'A verified token can still lack object/record read scopes or access to People or Companies. Check the same workspace’s Developers token Scopes, then Refresh sources. An empty picker does not enable all records.',
+    output:
+      'Current typed record snapshots, with optional selected-field two-way edits and linked note revisions. Notes are an API text projection, not an image or file backup. Choose a Fulcra folder and, optionally, compatible v1 Event records.',
+    backfillHelp:
+      'Current record fields are complete snapshots and are not filtered by this date. Optional notes use the selected initial history date; the proposed note window is 30 days. Deeper note history is an explicit choice.',
+    limitations:
+      'The original rich note is preserved in Attio; editing a note publishes a new linked text revision on the same selected record. No new CRM records, schema, lists, deletes or image downloads. Two-way mode needs files or files + v1 records. Up to 32 writable attributes per object, 1,000 mapped note lineages and 5 queued edits; oversized or inaccessible items remain visible for review.'
+  },
   garmin: {
     name: 'Garmin',
     credentialUrl: 'https://connect.garmin.com/app/settings/personalApiToken',
@@ -162,7 +195,9 @@ export function setupDefaults(connector, config = {}, now = Date.now()) {
     folder: config.route?.folder ?? `/connectors/${connector}`,
     recordType: config.route?.recordType ?? '',
     intervalSeconds: config.intervalSeconds ?? 300,
-    backfillSince: config.backfillSince ?? new Date(now - 7 * 86400000).toISOString()
+    backfillSince:
+      config.backfillSince ??
+      new Date(now - (connector === 'attio' ? 30 : 7) * 86400000).toISOString()
   };
 }
 /** @param {number} seconds */

@@ -6,7 +6,7 @@ Your copy runs at `your-name.my.fulcra.ai`. Sign in at `/login`, then open `/app
 
 1. Allow the app's background Fulcra access once. Approve in the popup; the page checks automatically and resumes after reload. If blocked, use the verification link. Browser sign-in and unattended access are separate.
 2. Choose a service. Its form includes direct token/app console links, help, required scopes and copy steps. Granola creates keys in its desktop app; the exact path is shown.
-3. Enter your read credential in the protected form, verify it, and select the exact sources to collect.
+3. Enter your provider credential in the protected form, verify it, and select the exact sources to collect.
 4. Choose **Destination**: files, v1 records, or both. Pick a folder and/or compatible owned v1 type. **+ Create new v1 data type…** creates a type with your name and optional description and selects it. The separate standard-type action creates/reuses `Connector records`.
 5. Choose **Schedule** and the initial history date. Save, inspect the preview, confirm it and enable collection.
 
@@ -17,6 +17,7 @@ Your copy runs at `your-name.my.fulcra.ai`. Sign in at `/login`, then open `/app
 | Asana   | Selected workspace projects           | [Tokens, tasks and events](providers/asana.md)                        |
 | GitHub  | Selected repositories                 | [PAT/App, issues and comments](providers/github.md)                   |
 | Notion  | Selected root pages                   | [Connection token and nested blocks](providers/notion.md)             |
+| Attio   | Exact People / Companies records      | [Typed fields and linked note revisions](providers/attio.md)          |
 | Slack   | Selected member channels              | [Bot/user tokens, history and threads](providers/slack.md)            |
 
 Use **Back to all connectors**, **Add connection**, or the top **Connections** link to return to the chooser. Leaving details does not save edits, disconnect, or change collection.
@@ -30,6 +31,8 @@ Use **Back to all connectors**, **Add connection**, or the top **Connections** l
 | Destination     | Files in `/connectors/SERVICE` | Folder, compatible v1 type, or both                |
 | Sources         | None                           | Explicitly selected resource IDs                   |
 | Collection      | Off                            | Review preview, confirm and enable                 |
+
+Attio proposes 30 days for optional notes; current record snapshots are not date-filtered. Other providers retain the seven-day proposal.
 
 The interval is the delay after a completed cycle, not an exact freshness promise. Rate limits, large backfills and delayed source content can slow it. Notion traverses complete roots regardless of date; Asana includes incomplete tasks plus recently completed tasks. Provider guides describe the differences.
 
@@ -52,3 +55,9 @@ Credentials are encrypted server-side in your deployment's operational state. It
 Notion imports are one-way by default. For editable page title/Markdown/archive sync in both directions, enable the explicit two-way checkbox, choose a creation parent and follow the [Notion two-way setup](providers/notion.md#optional-two-way-page-sync). The app includes a page editor, new-page creation, recoverable archive/restore, sync controls and reviewed conflict resolution. Preview and enable are still required.
 
 For two-way Notion pages, **Agent index** in the connection panel gives the generated `index.md` path and publication state. It is updated from verified sync results and groups page/source links by status, including archived/conflicted/unsupported entries. Agents can start there instead of enumerating UUID files. Edit the page working copies, not the generated index. See the [Notion guide](providers/notion.md#agent-navigation-index-and-storage) for storage and the reasons behind the current POC bounds.
+
+### Two-way Attio fields and linked notes
+
+Attio defaults to one-way current record snapshots. Select exact People/Companies records, explicitly opt into two-way sync and approve writable fields for each object. Notes are a separate opt-in from selected parents. Two-way mode requires a working-copy folder, optionally with v1 Event history. The proposed note history is 30 days; current record fields are not date-filtered. Review Sources → Destination → Schedule → Preview/Enable before any collection.
+
+The typed editor preserves zero, false, explicit clearing and multiselect removals. Queued edits require verified provider/Fulcra readback. Conflicts show Attio, accepted Fulcra and retained intervening evidence; unavailable choices remain disabled without discarding other evidence. The note editor shows a source snapshot separately and **Publish linked note revision** creates a new note while preserving the original rich source. API text projections are not image/file backups. Start with the paginated **Agent index** for working copies, status and next actions. See [Attio setup, permissions and limits](providers/attio.md) for exact token steps, supported types and recovery.

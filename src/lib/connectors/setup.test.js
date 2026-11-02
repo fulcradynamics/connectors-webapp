@@ -69,3 +69,28 @@ it('links Garmin key creation directly and discloses renewal, dataset, type and 
   expect(info.limitations).toContain('expired/revoked');
   expect(setup.setupDefaults('garmin').folder).toBe('/connectors/garmin');
 });
+
+it('provides Attio native token creation, explicit selected-field writes and connector-only bounds', () => {
+  expect(setup.getSourceLimit('attio')).toBe(1000);
+  for (const connector of ['notion', 'github', 'garmin', 'granola', 'asana', 'slack'])
+    expect(setup.getSourceLimit(connector)).toBe(50);
+  const info = setup.getConnectorSetup('attio');
+  expect(info.credentialUrl).toBeNull();
+  expect(info.credentialNote).toContain('Workspace settings');
+  expect(info.credentialSteps.join(' ')).toContain('Create access token');
+  expect(info.credentialSteps.join(' ')).toContain('click Save');
+  expect(info.setupUrl).toBe('https://attio.com/help/reference/apps/generating-an-api-key');
+  expect(info.scopes).toContain('record_permission:read-write');
+  expect(info.scopes).toContain('note:read-write');
+  expect(info.output).toContain('API text projection');
+  expect(info.limitations).toContain('original rich note');
+  expect(info.sourceHelp).toContain('exact');
+  expect(setup.setupDefaults('attio', {}, Date.parse('2026-11-02T12:00:00Z'))).toMatchObject({
+    folder: '/connectors/attio',
+    intervalSeconds: 300,
+    backfillSince: '2026-10-03T12:00:00.000Z'
+  });
+  expect(
+    setup.setupDefaults('attio', { backfillSince: '2026-09-01T00:00:00Z' }).backfillSince
+  ).toBe('2026-09-01T00:00:00Z');
+});

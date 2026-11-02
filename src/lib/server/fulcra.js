@@ -175,8 +175,10 @@ export class FulcraClient {
   }
   /** Published version metadata survives deletion; current bytes require one uploaded head.
    * History order is for display, not a conditional-write or current-head guarantee.
-   * @param {string} path */
-  async fileState(path) {
+   * @param {string} path @param {{maxBytes?:number}} options */
+  async fileState(path, { maxBytes = 64 * 1024 } = {}) {
+    if (!Number.isInteger(maxBytes) || maxBytes <= 0 || maxBytes > 256 * 1024)
+      throw Error('Invalid working-file byte bound');
     const slash = path.lastIndexOf('/'),
       parent = path.slice(0, slash) || '/',
       name = path.slice(slash + 1);
@@ -225,9 +227,9 @@ export class FulcraClient {
     if (current.length > 1) throw Error('Ambiguous current working-file versions');
     if (!current.length) return { file: null, versions };
     const head = current[0];
-    if (Number(head.size) > 64 * 1024) throw Error('Working-file content exceeds bound');
-    const bytes = await this.readFileBytes(head.id, 64 * 1024);
-    if (bytes.byteLength > 64 * 1024) throw Error('Working-file content exceeds bound');
+    if (Number(head.size) > maxBytes) throw Error('Working-file content exceeds bound');
+    const bytes = await this.readFileBytes(head.id, maxBytes);
+    if (bytes.byteLength > maxBytes) throw Error('Working-file content exceeds bound');
     return {
       file: {
         id: head.id,
@@ -239,9 +241,9 @@ export class FulcraClient {
     };
   }
   /** Current bytes with retained published history; archived bytes are never a current readback.
-   * @param {string} path */
-  async latestFile(path) {
-    return (await this.fileState(path)).file;
+   * @param {string} path @param {{maxBytes?:number}} options */
+  async latestFile(path, options = {}) {
+    return (await this.fileState(path, options)).file;
   }
   /** @param {string} path */
   async readFile(path) {

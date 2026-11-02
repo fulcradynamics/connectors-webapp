@@ -35,7 +35,7 @@ export async function configurationAction(fn) {
     error(
       400,
       cause instanceof Error &&
-        /configuration|Select |Choose |preview|authorization|Polling |Invalid |Configuration changed|token|reauthorize|bound|Two-way|Document|Conflict|Markdown|Enable |Working|Notion Markdown|Resolve /i.test(
+        /configuration|Select |Choose |preview|authorization|Polling |Invalid |Configuration changed|token|reauthorize|bound|Two-way|Document|Conflict|Markdown|Enable |Working|Notion Markdown|Resolve |Attio /i.test(
           cause.message
         )
         ? cause.message

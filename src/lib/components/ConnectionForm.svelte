@@ -107,7 +107,9 @@
         ? 'Garmin Personal API key'
         : connector === 'notion'
           ? 'Internal connection API token'
-          : 'Read token / API key'}<input
+          : connector === 'attio'
+            ? 'Attio workspace access token'
+            : 'Read token / API key'}<input
         type="password"
         bind:value={token}
         required
@@ -156,7 +158,8 @@
       </p>
     {:else}<p>
         <strong>Proposed base settings:</strong>
-        {describeInterval(defaults.intervalSeconds)}, a 7-day starting date, and files in
+        {describeInterval(defaults.intervalSeconds)}, a {connector === 'attio' ? 30 : 7}-day
+        starting date, and files in
         <code>{defaults.folder}</code>. Nothing is selected or collecting yet. Change these in the
         next steps.
       </p>{/if}

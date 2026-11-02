@@ -250,3 +250,28 @@ it('applies the tighter working-file limit while streaming rather than after ful
   expect(f.cancelled).toHaveBeenCalledTimes(1);
   expect(f.wholeBuffer).not.toHaveBeenCalled();
 });
+
+it('allows explicit bounded encrypted bucket reads without changing the normal working-file limit', async () => {
+  const payload = 'x'.repeat(170 * 1024);
+  const fetchImpl = vi.fn(async (/** @type {any} */ input) =>
+    new URL(input).pathname.endsWith('/download')
+      ? new Response(payload)
+      : Response.json({
+          files: [
+            { ...version('bucket', 'uploaded', '2026-11-01T00:01:00Z'), size: payload.length }
+          ]
+        })
+  );
+  const client = new FulcraClient({
+    endpoint: 'https://fulcra.test/',
+    accessToken: 'synthetic',
+    fetchImpl
+  });
+  await expect(client.latestFile(path)).rejects.toThrow('bound');
+  expect((await client.latestFile(path, { maxBytes: 192 * 1024 }))?.content).toBe(payload);
+  await expect(client.fileState(path, { maxBytes: 128 * 1024 })).rejects.toThrow('bound');
+  fetchImpl.mockClear();
+  for (const maxBytes of [0, -1, 1.5, Infinity, 257 * 1024])
+    await expect(client.fileState(path, { maxBytes })).rejects.toThrow('bound');
+  expect(fetchImpl).not.toHaveBeenCalled();
+});

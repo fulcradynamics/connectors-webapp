@@ -49,3 +49,68 @@ it('does not dispatch a foreign credential type or break static credentials', as
     validate.mockRestore();
   }
 });
+
+it('enrolls only Attio token plus trusted verified workspace and scopes, discarding client claims', async () => {
+  const workspaceId = '10000000-0000-4000-8000-000000000001';
+  const scopes = ['object_configuration:read', 'record_permission:read-write'];
+  const validate = vi
+    .spyOn(adapters.attio, 'validate')
+    .mockResolvedValue({ accountId: workspaceId, workspaceId, scopes });
+  try {
+    const result = await enrollProviderCredential('attio', {
+      token: 'synthetic-attio-token',
+      workspaceId: 'forged',
+      scopes: ['forged'],
+      accountId: 'forged',
+      extra: 'private'
+    });
+    expect(validate).toHaveBeenCalledWith({ token: 'synthetic-attio-token' });
+    expect(result).toEqual({
+      accountId: workspaceId,
+      credential: { token: 'synthetic-attio-token', workspaceId, scopes }
+    });
+    scopes.push('note:read');
+    expect(result.credential.scopes).toEqual([
+      'object_configuration:read',
+      'record_permission:read-write'
+    ]);
+  } finally {
+    validate.mockRestore();
+  }
+});
+
+it('rejects missing or inconsistent Attio verified workspace metadata', async () => {
+  const workspaceId = '10000000-0000-4000-8000-000000000001';
+  const validate = vi.spyOn(adapters.attio, 'validate');
+  try {
+    for (const verified of [
+      { accountId: workspaceId },
+      { accountId: workspaceId, workspaceId: 'invalid', scopes: [] },
+      { accountId: '20000000-0000-4000-8000-000000000001', workspaceId, scopes: [] },
+      { accountId: workspaceId, workspaceId, scopes: 'not-array' }
+    ]) {
+      validate.mockResolvedValueOnce(/** @type {any} */ (verified));
+      await expect(
+        enrollProviderCredential('attio', { token: 'synthetic-attio-token' })
+      ).rejects.toThrow(/workspace|scope|identity/i);
+    }
+  } finally {
+    validate.mockRestore();
+  }
+});
+
+it('rejects an absent Attio token before verification and never stores an unusable credential envelope', async () => {
+  const workspaceId = '10000000-0000-4000-8000-000000000001';
+  const validate = vi
+    .spyOn(adapters.attio, 'validate')
+    .mockResolvedValue({ accountId: workspaceId, workspaceId, scopes: ['record_permission:read'] });
+  try {
+    for (const token of [undefined, '', 42, 'line\nbreak'])
+      await expect(enrollProviderCredential('attio', { token })).rejects.toThrow(
+        /token|credential/i
+      );
+    expect(validate).not.toHaveBeenCalled();
+  } finally {
+    validate.mockRestore();
+  }
+});

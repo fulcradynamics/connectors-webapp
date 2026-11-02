@@ -71,11 +71,11 @@ it('records intent and allocation durably before file transfer; checkpoint waits
   expect(unstage(s, 'pending:c', s.checkpoints.c.pending, crypto).items[0].receipt.status).toBe(
     'intent'
   );
-  const deadline=unseal(s.checkpoints.c.pending,'d:o:native:pending:c',crypto).expiresAt;
-  await new Promise(resolve=>setTimeout(resolve,5));
+  const deadline = unseal(s.checkpoints.c.pending, 'd:o:native:pending:c', crypto).expiresAt;
+  await new Promise((resolve) => setTimeout(resolve, 5));
   s = await advanceWorker(s, deps);
   expect(calls).toEqual(['allocate']);
-  expect(unseal(s.checkpoints.c.pending,'d:o:native:pending:c',crypto).expiresAt).toBe(deadline);
+  expect(unseal(s.checkpoints.c.pending, 'd:o:native:pending:c', crypto).expiresAt).toBe(deadline);
   expect(unstage(s, 'pending:c', s.checkpoints.c.pending, crypto).items[0].receipt.inputId).toBe(
     'file'
   );
@@ -217,4 +217,266 @@ it('surfaces hash failures and pauses instead of retrying immutable bad objects 
   expect(s.connections.c.status).toBe('paused');
   expect(s.connections.c.lastError).toContain('verification_failed');
   expect(s.checkpoints.c.value).toBeUndefined();
+});
+
+// Integration uses the real Attio worker and encrypted native manifest, not a dispatch mock.
+const attioIds = {
+  connection: '11111111-1111-4111-8111-111111111111',
+  workspace: '22222222-2222-4222-8222-222222222222',
+  object: '33333333-3333-4333-8333-333333333333',
+  record: '44444444-4444-4444-8444-444444444444',
+  field: '55555555-5555-4555-8555-555555555555'
+};
+function attioFixture() {
+  const s = fixture(),
+    c = s.connections.c;
+  delete s.connections.c;
+  c.id = attioIds.connection;
+  c.connector = 'attio';
+  c.account_id = attioIds.workspace;
+  c.config = {
+    resources: [`${attioIds.object}:${attioIds.record}`],
+    intervalSeconds: 60,
+    route: { mode: 'file', folder: '/attio' },
+    attio: {
+      twoWay: true,
+      includeNotes: false,
+      writableAttributes: { [attioIds.object]: [attioIds.field] }
+    }
+  };
+  s.connections[c.id] = c;
+  return s;
+}
+
+it('registers the actual Attio adapter for validation, discovery and one-way collection', async () => {
+  const { adapters } = await import('../connectors/index.js');
+  const { attio } = await import('../connectors/attio.js');
+  expect(adapters).toHaveProperty('attio', attio);
+  expect(Object.keys(adapters).sort()).toEqual([
+    'asana',
+    'attio',
+    'garmin',
+    'github',
+    'granola',
+    'notion',
+    'slack'
+  ]);
+});
+
+it('dispatches enabled Attio two-way work through its real persisted worker with the injected API', async () => {
+  const s = attioFixture(),
+    c = s.connections[attioIds.connection];
+  const credential = { token: 'synthetic-attio-credential' };
+  let providerReads = 0,
+    attioReads = 0,
+    genericReads = 0;
+  const deps = {
+    crypto,
+    client: {},
+    provider: async (/** @type {any} */ connection) => {
+      expect(connection).toBe(c);
+      providerReads++;
+      return credential;
+    },
+    attio: {
+      readRecord: async (
+        /** @type {string} */ id,
+        /** @type {any} */ suppliedCredential,
+        /** @type {string} */ workspaceId,
+        /** @type {number} */ deadline
+      ) => {
+        attioReads++;
+        expect(id).toBe(c.config.resources[0]);
+        expect(suppliedCredential).toBe(credential);
+        expect(workspaceId).toBe(attioIds.workspace);
+        expect(deadline).toBeGreaterThan(Date.now());
+        return {
+          binding: { workspaceId, objectId: attioIds.object, recordId: attioIds.record },
+          title: 'Synthetic Attio record',
+          url: '',
+          attributes: [
+            {
+              id: attioIds.field,
+              slug: 'description',
+              title: 'Description',
+              type: 'text',
+              multiple: false,
+              writable: true,
+              required: false
+            }
+          ],
+          rawValues: { [attioIds.field]: [{ value: 'Retained typed text' }] }
+        };
+      }
+    },
+    adapters: {
+      attio: {
+        readPage: async () => {
+          genericReads++;
+          return { changes: [], candidateCheckpoint: null };
+        }
+      }
+    }
+  };
+  for (let n = 0; n < 4; n++) await advanceWorker(s, deps);
+  expect(attioReads).toBe(1);
+  expect(providerReads).toBe(1);
+  expect(genericReads).toBe(0);
+  expect(s.active.phase).toBe('attio-two-way');
+  expect(s.grants['attio-sync:' + c.id]).toBeTruthy();
+  expect(JSON.stringify(s.grants)).not.toContain('Retained typed text');
+  expect(s.checkpoints[c.id].pending).toBeUndefined();
+});
+
+it.each(['missing-grant', 'refresh-required', 'paused', 'stale-generation'])(
+  'does not dispatch Attio remote work before the existing %s guard is satisfied',
+  async (guard) => {
+    const s = attioFixture(),
+      c = s.connections[attioIds.connection];
+    s.active = { connectionId: c.id, generation: c.generation, phase: 'read' };
+    if (guard === 'missing-grant') delete s.grants.fulcra;
+    if (guard === 'refresh-required') s.grants.fulcra.expiresAt = new Date().toISOString();
+    if (guard === 'paused') c.status = 'paused';
+    if (guard === 'stale-generation') c.generation++;
+    let providerReads = 0,
+      attioReads = 0;
+    await advanceWorker(s, {
+      crypto,
+      client: {},
+      provider: async () => {
+        providerReads++;
+        return {};
+      },
+      attio: {
+        readRecord: async () => {
+          attioReads++;
+        }
+      }
+    });
+    expect(providerReads).toBe(0);
+    expect(attioReads).toBe(0);
+    expect(s.grants['attio-sync:' + c.id]).toBeUndefined();
+    if (guard === 'refresh-required') expect(s.grants.fulcra.status).toBe('refreshing');
+  }
+);
+
+it.each([undefined, false])(
+  'keeps Attio config.attio.twoWay=%s on the generic one-way adapter path',
+  async (twoWay) => {
+    const s = attioFixture(),
+      c = s.connections[attioIds.connection];
+    if (twoWay === undefined) delete c.config.attio;
+    else c.config.attio.twoWay = false;
+    let genericReads = 0,
+      attioReads = 0;
+    const deps = {
+      crypto,
+      client: {},
+      provider: async () => ({}),
+      attio: {
+        readRecord: async () => {
+          attioReads++;
+        }
+      },
+      adapters: {
+        attio: {
+          readPage: async () => {
+            genericReads++;
+            return { changes: [], candidateCheckpoint: { synthetic: 'one-way' } };
+          }
+        }
+      }
+    };
+    await advanceWorker(s, deps);
+    await advanceWorker(s, deps);
+    expect(genericReads).toBe(1);
+    expect(attioReads).toBe(0);
+    expect(s.grants['attio-sync:' + c.id]).toBeUndefined();
+    expect(
+      unstage(s, 'pending:' + c.id, s.checkpoints[c.id].pending, crypto).candidateCheckpoint
+    ).toEqual({ synthetic: 'one-way' });
+  }
+);
+
+it('never calls the injected Attio API when provider credential retrieval fails', async () => {
+  const s = attioFixture(),
+    c = s.connections[attioIds.connection];
+  let providerReads = 0,
+    attioReads = 0;
+  const deps = {
+    crypto,
+    client: {},
+    provider: async () => {
+      providerReads++;
+      throw Error('reauthorize');
+    },
+    attio: {
+      readRecord: async () => {
+        attioReads++;
+      }
+    }
+  };
+  for (let n = 0; n < 4; n++) await advanceWorker(s, deps);
+  expect(providerReads).toBe(1);
+  expect(attioReads).toBe(0);
+  expect(s.active).toBeNull();
+  expect(c.nextDue).toBeGreaterThan(Date.now());
+  expect(s.grants['attio-sync:' + c.id]).toBeTruthy();
+});
+
+it('retains the existing injected Notion two-way dispatch independently of Attio', async () => {
+  const s = attioFixture(),
+    c = s.connections[attioIds.connection];
+  c.connector = 'notion';
+  c.config.resources = [attioIds.record];
+  c.config.twoWay = { enabled: true, parentId: attioIds.record };
+  delete c.config.attio;
+  let notionReads = 0,
+    attioReads = 0,
+    genericReads = 0;
+  const deps = {
+    crypto,
+    client: { latestFile: async () => null, listFiles: async () => [] },
+    provider: async () => ({}),
+    attio: {
+      readRecord: async () => {
+        attioReads++;
+      }
+    },
+    notion: {
+      children: async () => ({ pages: [], cursor: null }),
+      read: async (/** @type {string} */ id) => {
+        notionReads++;
+        return {
+          id,
+          parentId: null,
+          supported: true,
+          titleProperty: 'title',
+          document: {
+            title: 'Synthetic Notion page',
+            markdown: 'Retained Notion text',
+            archived: false
+          }
+        };
+      }
+    },
+    adapters: {
+      notion: {
+        readPage: async () => {
+          genericReads++;
+          return { changes: [], candidateCheckpoint: null };
+        }
+      }
+    }
+  };
+  // Notion yields between its discovery phases; each due tick selects it again.
+  for (let n = 0; n < 6; n++) {
+    c.nextDue = 0;
+    await advanceWorker(s, deps);
+  }
+  expect(notionReads).toBe(1);
+  expect(attioReads).toBe(0);
+  expect(genericReads).toBe(0);
+  expect(s.grants['notion-sync:' + c.id]).toBeTruthy();
+  expect(s.grants['attio-sync:' + c.id]).toBeUndefined();
 });

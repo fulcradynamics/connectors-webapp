@@ -182,6 +182,16 @@ async function currentSnapshot(accessToken = undefined) {
   }
   error(503, 'Native controller is not available');
 }
+/** Request admission uses only the authenticated controller view, never submitted config.
+ * @param {string} path @param {string} method @param {any} view */
+export function nativeBodyLimit(path, method, view = null) {
+  if (path.startsWith('/api/webhooks/')) return 128000;
+  if (/^\/api\/connections\/[a-f0-9-]{36}\/documents$/i.test(path)) return 64000;
+  const detail = path.match(/^\/api\/connections\/([a-f0-9-]{36})$/i);
+  if (method === 'PUT' && detail && view?.connections?.[detail[1]]?.connector === 'attio')
+    return 128000;
+  return 32000;
+}
 /** @param {any} event @returns {Promise<Response|undefined>} */
 export async function nativeHTTP(event) {
   if (env.CONNECTORS_BACKEND !== 'workflow') return;
@@ -266,9 +276,12 @@ export async function nativeHTTP(event) {
   }
   const detail = path.match(/^\/api\/connections\/([a-f0-9-]{36})$/i);
   const needsSnapshot =
-    setup || isWebhook || (method === 'GET' && (path === '/api/connections' || !!detail));
+    setup ||
+    isWebhook ||
+    (method === 'GET' && path === '/api/connections') ||
+    ((method === 'GET' || method === 'PUT') && !!detail);
   // Ordinary commands read and validate authoritative state inside the controller.
-  // Snapshot reads are only needed by the synchronous views and webhook preflight.
+  // Synchronous views, webhook preflight and connector-specific PUT admission use snapshots.
   const snapshot = needsSnapshot ? await currentSnapshot(owner?.accessToken) : null;
   if (!needsSnapshot && owner) await ensureMarker(owner.accessToken);
   if (setup)
@@ -307,15 +320,7 @@ export async function nativeHTTP(event) {
     );
   }
   const text = method === 'GET' ? undefined : await request.text();
-  if (
-    text &&
-    Buffer.byteLength(text) >
-      (isWebhook
-        ? 128000
-        : /^\/api\/connections\/[a-f0-9-]{36}\/documents$/i.test(path)
-          ? 64000
-          : 32000)
-  )
+  if (text && Buffer.byteLength(text) > nativeBodyLimit(path, method, snapshot?.view))
     error(413, 'Request too large');
   let commandHeaders = {};
   if (isWebhook) {

@@ -1,3 +1,4 @@
+import { advanceAttioSync } from '../attio-sync/worker.js';
 import { advanceNotionSync } from '../notion-sync/worker.js';
 import { env as privateEnv } from '$env/dynamic/private';
 import { env as publicEnv } from '$env/dynamic/public';
@@ -110,6 +111,8 @@ export async function advanceWorker(state, dependencies = {}) {
       ((/** @type {any} */ connection) => getProviderCredential(store, connection.id, crypto));
     if (c.connector === 'notion' && c.config.twoWay?.enabled)
       return advanceNotionSync(state, c, { crypto, client, provider, notion: dependencies.notion });
+    if (c.connector === 'attio' && c.config.attio?.twoWay)
+      return advanceAttioSync(state, c, { crypto, client, provider, api: dependencies.attio });
     if (active.phase === 'read') {
       if (cp.pending) {
         try {

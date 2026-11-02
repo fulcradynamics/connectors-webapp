@@ -3,6 +3,15 @@
     $props();
   const examples = [
     {
+      id: 'attio',
+      name: 'Attio',
+      mark: 'A',
+      pattern: 'Typed CRM fields & linked notes',
+      description:
+        'Selected People / Companies, approved two-way fields and preserved note revisions.',
+      color: '#a9c6ff'
+    },
+    {
       id: 'granola',
       name: 'Granola',
       mark: 'G',

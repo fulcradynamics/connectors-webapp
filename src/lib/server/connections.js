@@ -3,11 +3,53 @@ import { MAX_SELECTED_SOURCES } from '../connectors/setup.js';
 import { canonical, contentHash } from './sync/identity.js';
 import { prepareOutput } from './sync/runner.js';
 import { unseal } from './secrets.js';
-/** Only this allowlist is persisted as non-secret configuration.
- * @param {any} input @param {string[]} discovered @param {string} ownerId */
-export function validateConfig(input, discovered, ownerId) {
+const ATTIO_UUID = /^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/;
+/** @param {any} value */
+function configurationObject(value) {
+  return (
+    value &&
+    typeof value === 'object' &&
+    !Array.isArray(value) &&
+    [Object.prototype, null].includes(Object.getPrototypeOf(value))
+  );
+}
+/** @param {any} input @param {string[]} resources */
+function attioConfiguration(input, resources) {
   if (
-    !input ||
+    !configurationObject(input) ||
+    Object.keys(input).length !== 3 ||
+    Object.keys(input).some(
+      (key) => !['twoWay', 'includeNotes', 'writableAttributes'].includes(key)
+    ) ||
+    typeof input.twoWay !== 'boolean' ||
+    typeof input.includeNotes !== 'boolean' ||
+    !configurationObject(input.writableAttributes)
+  )
+    throw Error('Invalid Attio configuration');
+  const selectedObjects = new Set(resources.map((id) => id.split(':')[0]));
+  const writableAttributes = /** @type {Record<string,string[]>} */ ({});
+  for (const objectId of Object.keys(input.writableAttributes).sort()) {
+    const attributes = input.writableAttributes[objectId];
+    if (
+      !ATTIO_UUID.test(objectId) ||
+      !selectedObjects.has(objectId) ||
+      !Array.isArray(attributes) ||
+      attributes.length > 32 ||
+      new Set(attributes).size !== attributes.length ||
+      Array.from(attributes).some((id) => typeof id !== 'string' || !ATTIO_UUID.test(id))
+    )
+      throw Error('Invalid Attio selected object or writable attribute UUIDs');
+    writableAttributes[objectId] = [...attributes].sort();
+  }
+  if (!input.twoWay && Object.keys(writableAttributes).length)
+    throw Error('One-way Attio configuration cannot select writable attributes');
+  return { twoWay: input.twoWay, includeNotes: input.includeNotes, writableAttributes };
+}
+/** Only this allowlist is persisted as non-secret configuration.
+ * @param {any} input @param {string[]} discovered @param {string} ownerId @param {string} connector */
+export function validateConfig(input, discovered, ownerId, connector = '') {
+  if (
+    !configurationObject(input) ||
     Object.keys(input).some(
       (k) =>
         ![
@@ -16,7 +58,8 @@ export function validateConfig(input, discovered, ownerId) {
           'intervalSeconds',
           'route',
           'routeVersion',
-          'twoWay'
+          'twoWay',
+          ...(connector === 'attio' ? ['attio'] : [])
         ].includes(k)
     )
   )
@@ -29,8 +72,20 @@ export function validateConfig(input, discovered, ownerId) {
     )
   )
     throw new Error('Select discovered sources');
-  if (input.resources.length > MAX_SELECTED_SOURCES)
-    throw new Error(`Select at most ${MAX_SELECTED_SOURCES} sources per connection`);
+  const maximumSources = connector === 'attio' ? 1000 : MAX_SELECTED_SOURCES;
+  if (input.resources.length > maximumSources)
+    throw new Error(`Select at most ${maximumSources} sources per connection`);
+  if (connector === 'attio') {
+    if (new Set(input.resources).size !== input.resources.length)
+      throw Error('Duplicate Attio selected sources');
+    for (const id of input.resources) {
+      const parts = id.split(':');
+      if (parts.length !== 2 || !parts.every((/** @type {string} */ part) => ATTIO_UUID.test(part)))
+        throw Error('Attio resource UUID identity required');
+    }
+    if (Object.hasOwn(input, 'twoWay'))
+      throw Error('Notion two-way configuration is not valid for Attio');
+  }
   if (
     !Number.isInteger(input.intervalSeconds) ||
     input.intervalSeconds < 60 ||
@@ -45,6 +100,16 @@ export function validateConfig(input, discovered, ownerId) {
     Object.keys(input.route).some((k) => !['mode', 'folder', 'recordType', 'ownerId'].includes(k))
   )
     throw new Error('Invalid destination configuration');
+  const attio = Object.hasOwn(input, 'attio')
+    ? attioConfiguration(input.attio, input.resources)
+    : undefined;
+  if (
+    attio?.twoWay &&
+    (!['file', 'both'].includes(input.route.mode) ||
+      typeof input.route.folder !== 'string' ||
+      !input.route.folder.trim())
+  )
+    throw Error('Choose file output and a folder for Attio two-way sync');
   let twoWay;
   if (input.twoWay != null) {
     if (
@@ -64,6 +129,7 @@ export function validateConfig(input, discovered, ownerId) {
   return {
     resources: [...new Set(input.resources)],
     ...(twoWay ? { twoWay } : {}),
+    ...(attio ? { attio } : {}),
     backfillSince: new Date(since).toISOString(),
     intervalSeconds: input.intervalSeconds,
     routeVersion: input.routeVersion ?? 1,
@@ -171,9 +237,9 @@ export async function enableConnection(store, id, confirmed, crypto) {
 }
 
 /** Distinguish routing identity, source progress and scheduling-only changes.
- * @param {any} old @param {any} input @param {string[]} discovered @param {string} ownerId */
-export function configurationUpdate(old, input, discovered, ownerId) {
-  const config = validateConfig(input, discovered, ownerId);
+ * @param {any} old @param {any} input @param {string[]} discovered @param {string} ownerId @param {string} connector */
+export function configurationUpdate(old, input, discovered, ownerId, connector = '') {
+  const config = validateConfig(input, discovered, ownerId, connector);
   const normalizedOld = {
     ...old,
     backfillSince: old.backfillSince ? new Date(old.backfillSince).toISOString() : undefined
@@ -183,6 +249,7 @@ export function configurationUpdate(old, input, discovered, ownerId) {
   const resetCheckpoint =
     routingChanged ||
     canonical(old.twoWay) !== canonical(config.twoWay) ||
+    canonical(old.attio) !== canonical(config.attio) ||
     canonical(old.resources) !== canonical(config.resources) ||
     normalizedOld.backfillSince !== config.backfillSince;
   return { config, resetCheckpoint, changed: canonical(normalizedOld) !== canonical(config) };

@@ -2,6 +2,14 @@
   const repo = 'https://github.com/fulcradynamics/connectors-webapp';
   const examples = [
     {
+      name: 'Attio',
+      mark: 'At',
+      file: 'attio',
+      pattern: 'Typed fields and linked notes',
+      detail:
+        'Exact People/Companies records with optional approved two-way fields and preserved note revisions.'
+    },
+    {
       name: 'Granola',
       mark: 'Gr',
       pattern: 'Meetings → context',
@@ -233,7 +241,7 @@ node scripts/deploy.mjs</code
       </div>
       <p class="guide-entry">
         Start with the <a href="/guide">user guide</a> or give your coding agent the
-        <a href="/guides/agent.md">agent instructions (Markdown)</a>. All six adapters are
+        <a href="/guides/agent.md">agent instructions (Markdown)</a>. All seven adapters are
         implemented in the template; run their synthetic fixtures with
         <code>npm run test:examples</code>.
       </p>

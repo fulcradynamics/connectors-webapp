@@ -1,6 +1,13 @@
 <script>
   const providers = [
     {
+      id: 'attio',
+      name: 'Attio',
+      prepare: 'Admin-created workspace token with selected record/optional note scopes',
+      select: 'Exact People/Companies records → approved fields and optional linked notes',
+      pattern: 'Typed two-way edits, preserved rich notes and sharded indexes'
+    },
+    {
       id: 'granola',
       name: 'Granola',
       prepare: 'API key from an eligible account + stable source account ID',
@@ -49,7 +56,7 @@
 <svelte:head
   ><title>User and agent guides — Fulcra Connectors</title><meta
     name="description"
-    content="Use the six implemented connector examples, hand an agent the build instructions, and contribute another connector for review."
+    content="Use the seven implemented connector examples, hand an agent the build instructions, and contribute another connector for review."
   /></svelte:head
 >
 <div class="guide-page">
@@ -58,8 +65,8 @@
     <p class="eyebrow">Use it. Extend it. Share it.</p>
     <h1>User guide</h1>
     <p class="lead">
-      Six implemented examples bring selected data into your Fulcra folders, v1 data types, or both.
-      Each one includes an adapter, source discovery, preview support and runnable tests.
+      Seven implemented examples bring selected data into your Fulcra folders, v1 data types, or
+      both. Each one includes an adapter, source discovery, preview support and runnable tests.
     </p>
     <div class="guide-actions">
       <a href="/guides/user.md">Full user instructions ↗</a><a href="/guides/agent.md"

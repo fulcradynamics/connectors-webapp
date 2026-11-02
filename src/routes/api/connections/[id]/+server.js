@@ -4,6 +4,9 @@ import { ownerRuntime, ownedConnection, bodyJSON, configurationAction } from '$l
 import { configurationUpdate } from '$lib/server/connections';
 import { validateRoute } from '$lib/server/sync/sinks';
 import { loadManifest } from '$lib/server/notion-sync/state';
+import { loadManifest as loadAttioManifest } from '$lib/server/attio-sync/state';
+import { validateAttioConfiguration } from '$lib/server/attio-sync/configuration';
+import { getProviderCredential } from '$lib/server/credentials';
 import { FulcraClient } from '$lib/server/fulcra';
 /** @type {import('./$types').RequestHandler} */
 export async function GET(event) {
@@ -18,14 +21,17 @@ export async function GET(event) {
 export async function PUT(event) {
   const { store, owner, crypto } = await ownerRuntime(event, true),
     connection = await ownedConnection(store, event.params.id),
-    input = await bodyJSON(event.request);
+    input = await bodyJSON(event.request, {
+      maxBytes: connection.connector === 'attio' ? 128000 : 32000
+    });
   return configurationAction(async () => {
     const resources = await store.getResources(connection.id);
     const { config, resetCheckpoint, changed } = configurationUpdate(
       connection.config,
       input,
       resources.map((/** @type {any} */ r) => r.id),
-      owner.userId
+      owner.userId,
+      connection.connector
     );
 
     if (config.twoWay) {
@@ -33,6 +39,16 @@ export async function PUT(event) {
         throw Error('Two-way configuration requires Notion and the native Workflow backend');
       if (await store.getGrant('notion-sync:' + connection.id))
         await loadManifest(store, { ...connection, config }, crypto);
+    }
+    if (connection.connector === 'attio' && (await store.getGrant('attio-sync:' + connection.id)))
+      await loadAttioManifest(store, { ...connection, config }, crypto);
+    if (connection.connector === 'attio' && config.attio) {
+      if (config.attio.twoWay && !store.supportsTwoWay)
+        throw Error('Attio two-way requires native Workflow backend');
+      await validateAttioConfiguration(
+        { ...connection, config },
+        await getProviderCredential(store, connection.id, crypto)
+      );
     }
     const client = new FulcraClient({
       endpoint: env.PUBLIC_FULCRA_API_ENDPOINT,
