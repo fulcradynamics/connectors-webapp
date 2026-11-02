@@ -76,7 +76,10 @@
       markdown = result.document.markdown;
       archived = result.document.archived;
       creating = false;
-      queued = result.queued;
+      queued = result.queued || result.workingReadUnavailable;
+      if (result.workingReadUnavailable)
+        message =
+          'The current working file could not be read safely. Your accepted text is retained below; sync after the file read is restored.';
       versions = null;
       if (result.conflict) {
         const [notion, fulcra] = await Promise.all(
@@ -84,7 +87,23 @@
             api(`?document=${encodeURIComponent(id)}&view=${view}`)
           )
         );
-        versions = { notion: notion.document, fulcra: fulcra.document };
+        const retained: any = {
+          notion: notion.document,
+          fulcra: fulcra.document,
+          working: null,
+          workingError: ''
+        };
+        if (result.interveningVersion) {
+          try {
+            retained.working = (
+              await api(`?document=${encodeURIComponent(id)}&view=working`)
+            ).document;
+          } catch (error) {
+            retained.workingError =
+              error instanceof Error ? error.message : 'Retained version is unavailable';
+          }
+        }
+        versions = retained;
       }
     });
   }
@@ -216,6 +235,12 @@
   {#if creating || opened}
     <div class="editor">
       <h4>{creating ? 'Create a page from Fulcra' : 'Edit Fulcra working copy'}</h4>
+      {#if opened?.interveningVersion && !opened.conflict}
+        <p role="status">
+          A working-file version is retained for conflict review:
+          <code>{opened.interveningVersion.fileId}</code>.
+        </p>
+      {/if}
       {#if opened?.conflict}
         <p role="alert">
           Both sides changed. Review the retained versions and choose one to sync. Neither side wins
@@ -235,6 +260,21 @@
               <pre>{versions.fulcra.markdown}</pre>
               <p>{versions.fulcra.archived ? 'Archived' : 'Active'}</p>
             </div>
+            {#if opened.interveningVersion}
+              <div>
+                <h4>Intervening working-file version</h4>
+                <p>Retained version: <code>{opened.interveningVersion.fileId}</code></p>
+                {#if versions.working}
+                  <strong>{versions.working.title}</strong>
+                  <pre>{versions.working.markdown}</pre>
+                  <p>{versions.working.archived ? 'Archived' : 'Active'}</p>
+                {:else}
+                  <p role="alert">
+                    This retained version could not be read. {versions.workingError}
+                  </p>
+                {/if}
+              </div>
+            {/if}
           </div>
           <div class="actions">
             <button disabled={busy || queued || !active} onclick={() => resolve('notion')}
@@ -242,6 +282,12 @@
             ><button disabled={busy || queued || !active} onclick={() => resolve('fulcra')}
               >Use Fulcra version</button
             >
+            {#if opened.interveningVersion}
+              <button
+                disabled={busy || queued || !active || !versions.working}
+                onclick={() => resolve('working')}>Use intervening working-file version</button
+              >
+            {/if}
           </div>
         {/if}
       {:else}

@@ -1312,3 +1312,429 @@ it('continues syncing an explicitly selected page by ID after its provider paren
   expect((await f.manifest()).entries[pageId].error).toBeUndefined();
   expect(f.calls.filter((/** @type {string} */ call) => call === 'body')).toHaveLength(1);
 });
+
+it('detects an archived intervening file edit after our upload and retains both versions for review', async () => {
+  const f = fixture();
+  await initial(f);
+  const allLatest = f.client.latestFile;
+  f.client.latestFile = async (/** @type {string} */ path) => {
+    const file = await allLatest(path);
+    return file ? { ...file, versions: [file.versions[0]] } : null;
+  };
+  f.client.fileState = async (/** @type {string} */ path) => {
+    const file = await allLatest(path);
+    const versions = (file?.versions ?? []).map(
+      (/** @type {any} */ v, /** @type {number} */ i) => ({
+        ...v,
+        state: i ? 'archived' : 'uploaded'
+      })
+    );
+    return { file: file ? { ...file, versions } : null, versions };
+  };
+  const own = document('Accepted editor version'),
+    intervening = document('Intervening agent version');
+  const service = createDocumentService({
+    store: nativeStore(f.state),
+    connection: f.state.connections[connectionId],
+    crypto,
+    client: f.client,
+    notion: f.notion,
+    credential: {}
+  });
+  await service.mutate({
+    operation: 'save',
+    id: pageId,
+    expectedRevision: (await allLatest(f.path)).id,
+    document: own
+  });
+  await f.until(
+    async () =>
+      (await f.manifest()).pending?.purpose === 'edit' &&
+      (await f.manifest()).pending?.phase === 'transfer'
+  );
+  const transfer = f.client.transferFile;
+  let version = /** @type {any} */ (null);
+  f.client.transferFile = async (/** @type {any} */ receipt, /** @type {string} */ content) => {
+    if (!version) version = f.put(f.path, encodeDocument(intervening));
+    return transfer(receipt, content);
+  };
+  await f.until(async () => (await f.manifest()).entries[pageId].status === 'conflict');
+  const m = await f.manifest();
+  expect(m.entries[pageId].recoveryEdit.document).toEqual(own);
+  expect(m.entries[pageId].recoveryEdit.interveningFileId).toBe(version.id);
+  expect(f.remote.get(pageId).document).toEqual(document());
+  expect(
+    f.calls.filter((/** @type {string} */ c) => ['body', 'title', 'archive'].includes(c))
+  ).toHaveLength(0);
+  const review = createDocumentService({
+    store: nativeStore(f.state),
+    connection: f.state.connections[connectionId],
+    crypto,
+    client: f.client,
+    notion: f.notion,
+    credential: {}
+  });
+  expect((await review.read(pageId, 'working')).document).toEqual(intervening);
+});
+it('rechecks the working head immediately before transfer and does not overwrite a newer edit', async () => {
+  const f = fixture();
+  await initial(f);
+  const own = document('Accepted queued edit');
+  const service = createDocumentService({
+    store: nativeStore(f.state),
+    connection: f.state.connections[connectionId],
+    crypto,
+    client: f.client,
+    notion: f.notion,
+    credential: {}
+  });
+  await service.mutate({
+    operation: 'save',
+    id: pageId,
+    expectedRevision: (await f.client.latestFile(f.path)).id,
+    document: own
+  });
+  await f.until(
+    async () =>
+      (await f.manifest()).pending?.purpose === 'edit' &&
+      (await f.manifest()).pending?.phase === 'transfer'
+  );
+  const later = f.put(f.path, encodeDocument(document('Newer working edit'))),
+    transfers = f.calls.filter((/** @type {string} */ c) => c === 'transfer').length;
+  await f.tick();
+  expect((await f.client.latestFile(f.path)).id).toBe(later.id);
+  expect(f.calls.filter((/** @type {string} */ c) => c === 'transfer')).toHaveLength(transfers);
+  expect((await f.manifest()).entries[pageId].recoveryEdit.document).toEqual(own);
+});
+it('does not retransfer a deleted upload receipt and retains the accepted edit', async () => {
+  const f = fixture();
+  await initial(f);
+  const allLatest = f.client.latestFile,
+    own = document('Accepted editor text after cancelled allocation');
+  const service = createDocumentService({
+    store: nativeStore(f.state),
+    connection: f.state.connections[connectionId],
+    crypto,
+    client: f.client,
+    notion: f.notion,
+    credential: {}
+  });
+  await service.mutate({
+    operation: 'save',
+    id: pageId,
+    expectedRevision: (await allLatest(f.path)).id,
+    document: own
+  });
+  await f.until(
+    async () =>
+      (await f.manifest()).pending?.purpose === 'edit' &&
+      (await f.manifest()).pending?.phase === 'transfer'
+  );
+  const p = (await f.manifest()).pending,
+    transfers = f.calls.filter((/** @type {string} */ x) => x === 'transfer').length;
+  f.client.fileState = async (/** @type {string} */ path) => {
+    const file = await allLatest(path);
+    return {
+      file,
+      versions: [
+        ...(file?.versions ?? []),
+        { id: p.receipt.inputId, state: 'deleted', uploaded_at: null }
+      ]
+    };
+  };
+  await f.tick();
+  expect(f.calls.filter((/** @type {string} */ x) => x === 'transfer')).toHaveLength(transfers);
+  expect((await f.manifest()).entries[pageId].recoveryEdit.document).toEqual(own);
+  expect(f.remote.get(pageId).document).toEqual(document());
+});
+for (const change of ['replacement', 'disappearance']) {
+  it(`retains an accepted editor document across the verified-file handoff ${change}`, async () => {
+    const f = fixture();
+    await initial(f);
+    const own = document('Accepted handoff edit');
+    const service = createDocumentService({
+      store: nativeStore(f.state),
+      connection: f.state.connections[connectionId],
+      crypto,
+      client: f.client,
+      notion: f.notion,
+      credential: {}
+    });
+    await service.mutate({
+      operation: 'save',
+      id: pageId,
+      expectedRevision: (await f.client.latestFile(f.path)).id,
+      document: own
+    });
+    await f.until(async () => {
+      const m = await f.manifest();
+      return !m.pending && !m.queue[pageId] && m.entries[pageId].status === 'pending';
+    });
+    if (change === 'replacement')
+      f.put(f.path, encodeDocument(document('Later external working edit')));
+    else f.files.delete(f.path);
+    await f.until(async () => !!(await f.manifest()).entries[pageId].recoveryEdit);
+    const m = await f.manifest();
+    expect(m.entries[pageId].recoveryEdit.document).toEqual(own);
+    expect(f.remote.get(pageId).document).toEqual(document());
+    if (change === 'disappearance') {
+      expect(m.entries[pageId].status).toBe('recovery_pending');
+      f.put(f.path, encodeDocument(document('Restored external working edit')));
+    }
+    await f.until(async () => (await f.manifest()).entries[pageId].status === 'conflict');
+    const saved = await f.manifest();
+    expect(saved.entries[pageId].recoveryEdit.document).toEqual(own);
+    expect(saved.entries[pageId].recoveryEdit.interveningFileId).toBe(
+      (await f.client.latestFile(f.path)).id
+    );
+    expect(f.calls.filter((/** @type {string} */ c) => c === 'body')).toHaveLength(0);
+  });
+}
+
+/** @param {any} f @param {any} own */
+async function acceptEditorHandoff(f, own) {
+  await createDocumentService({
+    store: nativeStore(f.state),
+    connection: f.state.connections[connectionId],
+    crypto,
+    client: f.client,
+    notion: f.notion,
+    credential: {}
+  }).mutate({
+    operation: 'save',
+    id: pageId,
+    expectedRevision: (await f.client.latestFile(f.path)).id,
+    document: own
+  });
+  await f.until(async () => {
+    const m = await f.manifest();
+    return !m.pending && !m.queue[pageId] && !!m.entries[pageId].acceptedEdit;
+  });
+}
+
+it.each(['invalid-document', 'invalid-bytes', 'source-404', 'source-unsupported'])(
+  'retains accepted handoff text through %s and captures the later current working version',
+  async (failure) => {
+    const f = fixture();
+    await initial(f);
+    const own = document('Accepted Own awaiting Notion');
+    await acceptEditorHandoff(f, own);
+    const latest = f.client.latestFile;
+    let invalidBytes = failure === 'invalid-bytes';
+    let unsupported = failure === 'source-unsupported';
+    const sourceRead = f.notion.read;
+    if (unsupported)
+      f.notion.read = async (/** @type {string} */ id) => ({
+        ...(await sourceRead(id)),
+        supported: !unsupported
+      });
+    if (invalidBytes)
+      f.client.latestFile = async (/** @type {string} */ path) => {
+        if (path === f.path && invalidBytes)
+          throw Object.assign(Error('Invalid UTF8'), { code: 'ERR_ENCODING_INVALID_ENCODED_DATA' });
+        return latest(path);
+      };
+    if (failure === 'invalid-document') f.put(f.path, 'Invalid working document');
+    if (failure === 'source-404') f.remote.delete(pageId);
+    await f.until(async () => !!(await f.manifest()).entries[pageId].recoveryEdit);
+    expect((await f.manifest()).entries[pageId].recoveryEdit.document).toEqual(own);
+    expect((await f.manifest()).pending).toBeNull();
+    invalidBytes = false;
+    unsupported = false;
+    f.remote.set(pageId, { parent: null, document: document() });
+    const later = f.put(f.path, encodeDocument(document('Current B after recovery')));
+    await f.until(async () => (await f.manifest()).entries[pageId].status === 'conflict');
+    const entry = (await f.manifest()).entries[pageId];
+    expect(entry.recoveryEdit.document).toEqual(own);
+    expect(entry.recoveryEdit.interveningFileIds).toContain(later.id);
+    expect(entry.recoveryEdit.interveningFileId).toBe(later.id);
+    expect(
+      decodeDocument((await f.client.latestFile(entry.conflict.paths[1].path)).content)
+    ).toEqual(own);
+    expect(
+      f.calls.filter((/** @type {string} */ call) => ['body', 'title', 'archive'].includes(call))
+    ).toHaveLength(0);
+  }
+);
+
+it('retains full desired text and current B when a pending Notion intent loses its source revision', async () => {
+  const f = fixture();
+  await initial(f);
+  const own = document('Accepted Own pending provider');
+  await acceptEditorHandoff(f, own);
+  await f.until(async () => (await f.manifest()).pending?.kind === 'notion');
+  const b = document('Current B replaces the accepted source');
+  const file = f.put(f.path, encodeDocument(b));
+  await f.until(async () => (await f.manifest()).entries[pageId].status === 'conflict');
+  const entry = (await f.manifest()).entries[pageId];
+  expect(entry.recoveryEdit.document).toEqual(own);
+  expect(entry.recoveryEdit.interveningFileId).toBe(file.id);
+  expect(decodeDocument((await f.client.latestFile(entry.conflict.paths[1].path)).content)).toEqual(
+    own
+  );
+  expect(decodeDocument((await f.client.latestFile(f.path)).content)).toEqual(b);
+  expect(f.remote.get(pageId).document).toEqual(document());
+});
+
+it('converts the accepted handoff marker to retained recovery when Notion changes before intent creation', async () => {
+  const f = fixture();
+  await initial(f);
+  const own = document('Accepted Own before a remote handoff change');
+  await acceptEditorHandoff(f, own);
+  f.remote.get(pageId).document = document('Remote handoff edit');
+  await f.until(async () => (await f.manifest()).entries[pageId].status === 'conflict');
+  const entry = (await f.manifest()).entries[pageId];
+  expect(entry.acceptedEdit).toBeUndefined();
+  expect(entry.recoveryEdit.document).toEqual(own);
+  expect(decodeDocument((await f.client.latestFile(entry.conflict.paths[1].path)).content)).toEqual(
+    own
+  );
+  expect(
+    f.calls.filter((/** @type {string} */ call) => ['body', 'title', 'archive'].includes(call))
+  ).toHaveLength(0);
+});
+
+it.each(['invalid-document', 'source-404'])(
+  'retains the complete pending Notion intent through %s and requires conflict review on recovery',
+  async (failure) => {
+    const f = fixture();
+    await initial(f);
+    const own = document('Own from the persisted Notion intent');
+    await acceptEditorHandoff(f, own);
+    await f.until(async () => (await f.manifest()).pending?.kind === 'notion');
+    if (failure === 'invalid-document') f.put(f.path, 'Invalid newer source file');
+    else f.remote.delete(pageId);
+    await f.until(async () => !!(await f.manifest()).entries[pageId].recoveryEdit);
+    const held = await f.manifest();
+    expect(held.entries[pageId].recoveryEdit.document).toEqual(own);
+    expect(held.pending).toBeNull();
+    expect(held.entries[pageId].deferred).toBeUndefined();
+    f.remote.set(pageId, { parent: null, document: document() });
+    const b = f.put(f.path, encodeDocument(document('Valid current B after the failure')));
+    await f.until(async () => (await f.manifest()).entries[pageId].status === 'conflict');
+    const entry = (await f.manifest()).entries[pageId];
+    expect(entry.recoveryEdit.document).toEqual(own);
+    expect(entry.recoveryEdit.interveningFileId).toBe(b.id);
+    expect(
+      decodeDocument((await f.client.latestFile(entry.conflict.paths[1].path)).content)
+    ).toEqual(own);
+    expect(
+      f.calls.filter((/** @type {string} */ call) => ['body', 'title', 'archive'].includes(call))
+    ).toHaveLength(0);
+  }
+);
+
+it.each(['replacement', 'disappearance'])(
+  'holds a new-page accepted handoff after %s and creates once only after Own is repaired',
+  async (change) => {
+    const f = fixture();
+    await initial(f);
+    const own = document('Accepted new-page Own', 'New own page');
+    const created = await createDocumentService({
+      store: nativeStore(f.state),
+      connection: f.state.connections[connectionId],
+      crypto,
+      client: f.client,
+      notion: f.notion,
+      credential: {}
+    }).mutate({ operation: 'create', document: own });
+    const path = `${f.folder}/${created.id}.md`;
+    await f.until(async () => {
+      const m = await f.manifest();
+      return !m.pending && !m.queue[created.id] && !!m.entries[created.id].acceptedEdit;
+    });
+    if (change === 'replacement') f.put(path, encodeDocument(document('New-page B')));
+    else f.files.delete(path);
+    await f.until(
+      async () => (await f.manifest()).entries[created.id].status === 'recovery_pending'
+    );
+    for (let i = 0; i < 8; i++) await f.tick();
+    expect((await f.manifest()).entries[created.id].recoveryEdit.document).toEqual(own);
+    expect(f.calls.filter((/** @type {string} */ call) => call === 'create')).toHaveLength(0);
+    f.put(path, encodeDocument(own));
+    await f.until(async () => (await f.manifest()).entries[created.id].status === 'synced', 160);
+    expect(f.calls.filter((/** @type {string} */ call) => call === 'create')).toHaveLength(1);
+    expect(f.remote.get(newId).document).toEqual(own);
+    expect((await f.manifest()).entries[created.id].acceptedEdit).toBeUndefined();
+  }
+);
+
+it('yields an unsupported pending Notion intent while retaining Own and allowing healthy pages to progress', async () => {
+  const f = fixture();
+  await initial(f);
+  const own = document('Pending unsupported Own');
+  await acceptEditorHandoff(f, own);
+  await f.until(async () => (await f.manifest()).pending?.kind === 'notion');
+  f.remote.set(newId, { parent: pageId, document: document('Healthy child') });
+  const read = f.notion.read;
+  f.notion.read = async (/** @type {string} */ id) => ({
+    ...(await read(id)),
+    supported: id !== pageId
+  });
+  await f.tick();
+  expect((await f.manifest()).pending).toBeNull();
+  expect((await f.manifest()).entries[pageId].recoveryEdit.document).toEqual(own);
+  await f.until(async () => (await f.manifest()).entries[newId]?.status === 'synced');
+  expect(f.calls.filter((/** @type {string} */ c) => c === 'body')).toHaveLength(0);
+});
+
+it('holds an active conflict with retained Own while the working file is missing without invalid-document retries', async () => {
+  const f = fixture();
+  await initial(f);
+  const own = document('Retained conflict Own');
+  await acceptEditorHandoff(f, own);
+  f.put(f.path, encodeDocument(document('Working B')));
+  await f.until(async () => (await f.manifest()).entries[pageId].status === 'conflict');
+  const conflictId = (await f.manifest()).entries[pageId].conflict.id;
+  f.files.delete(f.path);
+  for (let i = 0; i < 15; i++) await f.tick();
+  const m = await f.manifest();
+  expect(m.entries[pageId].recoveryEdit.document).toEqual(own);
+  expect(m.entries[pageId].conflict.id).toBe(conflictId);
+  expect(f.state.connections[connectionId].lastError).toBeNull();
+});
+
+it.each([
+  ['before-guard', 'replacement'],
+  ['during-guard', 'replacement'],
+  ['before-guard', 'missing'],
+  ['during-guard', 'missing']
+])(
+  'rechecks new-page accepted bytes %s (%s) before the fresh provider POST',
+  async (window, change) => {
+    const f = fixture();
+    await initial(f);
+    const own = document('New accepted create Own', 'Accepted create');
+    const result = await createDocumentService({
+      store: nativeStore(f.state),
+      connection: f.state.connections[connectionId],
+      crypto,
+      client: f.client,
+      notion: f.notion,
+      credential: {}
+    }).mutate({ operation: 'create', document: own });
+    const path = `${f.folder}/${result.id}.md`;
+    await f.until(async () => {
+      const p = (await f.manifest()).pending;
+      return p?.kind === 'create' && p.phase === 'create';
+    });
+    if (window === 'before-guard') {
+      if (change === 'missing') f.files.delete(path);
+      else f.put(path, encodeDocument(document('B before guard')));
+    } else {
+      const upload = f.client.uploadFile;
+      f.client.uploadFile = async (/** @type {string} */ p, /** @type {string} */ text) => {
+        const r = await upload(p, text);
+        if (p.includes('/.sync/create/')) {
+          if (change === 'missing') f.files.delete(path);
+          else f.put(path, encodeDocument(document('B during guard')));
+        }
+        return r;
+      };
+    }
+    await f.tick();
+    expect(f.calls.filter((/** @type {string} */ c) => c === 'create')).toHaveLength(0);
+    expect((await f.manifest()).pending).toBeNull();
+    expect((await f.manifest()).entries[result.id].recoveryEdit.document).toEqual(own);
+  }
+);

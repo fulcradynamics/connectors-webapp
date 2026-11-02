@@ -106,6 +106,12 @@ If a page is already syncing, Save is rejected before the edit is accepted. Your
 
 An accepted save that races a later working-file revision is retained for review instead of discarded. The page may show `recovery_pending` while access or valid working-file bytes are unavailable. Open it to inspect the retained saved text; restore access or repair the working file, then sync and review the conflict. The Fulcra conflict version contains that saved edit, while existing working-file versions remain retained. Neither version is applied automatically.
 
+When another working-file revision intervened during a save, the conflict review can also show **Intervening working-file version**. Read that copy and choose **Use intervening working-file version** only if it is the version you want. If its bytes cannot be read, its retained version ID stays visible and the choice remains unavailable; restore access before resolving it. The accepted editor text and current Notion version remain available separately.
+
+The write guard reads uploaded, archived and deleted file-version metadata, checks the current head before transfer, and checks intervening published versions afterward. Accepted editor text remains in encrypted recovery state across the file-to-Notion handoff until convergence or reviewed recovery. These checks detect observed races; neither service exposes a shared atomic transaction, so this is not a guarantee against every simultaneous external write.
+
+For a new draft that has no Notion page yet, an intervening or missing working file pauses creation. Copy the retained saved document back into its exact UUID working file, then sync to resume the original creation. A different working document will not be published automatically.
+
 Malformed UTF-8, oversized or invalid newly discovered working files are skipped with a warning so healthy pages continue. Correct the file and sync again. Temporary transport failures remain retryable; they are not treated as invalid content.
 
 ## Agent navigation index and storage

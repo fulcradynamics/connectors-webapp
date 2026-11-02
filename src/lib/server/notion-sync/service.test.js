@@ -354,3 +354,215 @@ it('resolves chosen Fulcra mixed text while preserving freshly reviewed opaque c
   expect(parseManaged(queued.markdown).blocks[1]).toEqual(fresh.blocks[1]);
   expect(saved.resolutions[id].fulcra).toBe(documentHash(queued));
 });
+
+/** @returns {Promise<any>} */
+async function interveningConflictFixture() {
+  const { encodeManaged } = await import('../../notion-managed.js');
+  const { contentHash } = await import('../sync/identity.js');
+  const f = fixture();
+  /** @param {string} text @param {string} opaque */
+  const managed = (text, opaque) => ({
+    version: 1,
+    pageId: id,
+    blocks: [
+      { id, type: 'paragraph', editable: true, texts: [text], styles: [{}], attributes: {} },
+      { id: other, type: 'embed', editable: false, snapshot: { url: opaque } }
+    ]
+  });
+  const own = {
+    ...doc,
+    title: 'Accepted Own',
+    markdown: encodeManaged(managed('Accepted own text', 'https://example.com/old'))
+  };
+  const current = {
+    ...doc,
+    markdown: encodeManaged(managed('Current working C', 'https://example.com/old'))
+  };
+  const working = {
+    ...doc,
+    title: 'Intervening B',
+    markdown: encodeManaged(managed('Intervening working B', 'https://example.com/old'))
+  };
+  const remote = {
+    ...doc,
+    markdown: encodeManaged(managed('Current Notion', 'https://example.com/current'))
+  };
+  f.file.id = 'current-C';
+  f.file.content = encodeDocument(current);
+  const m = await loadManifest(f.store, f.connection, crypto);
+  m.entries[id].status = 'conflict';
+  m.entries[id].recoveryEdit = { document: own, interveningFileId: 'intervening-B' };
+  m.entries[id].conflict = {
+    id: other,
+    paths: [
+      { fileId: 'notion-snapshot', path: '/n', hash: contentHash(encodeDocument(remote)) },
+      { fileId: 'own-snapshot', path: '/f', hash: contentHash(encodeDocument(own)) }
+    ],
+    expectedCurrent: { notion: documentHash(remote), fulcra: documentHash(current) }
+  };
+  await saveManifest(f.store, f.connection, m, crypto);
+  const bytes = new Map([
+    ['intervening-B', encodeDocument(working)],
+    ['notion-snapshot', encodeDocument(remote)],
+    ['own-snapshot', encodeDocument(own)]
+  ]);
+  /** @type {string[]} */
+  const reads = [];
+  const service = createDocumentService({
+    store: f.store,
+    connection: f.connection,
+    crypto,
+    credential: {},
+    client: {
+      ...f.client,
+      readFileBytes: async (/** @type {string} */ fileId) => {
+        reads.push(fileId);
+        if (!bytes.has(fileId)) throw Error('Retained version unavailable');
+        return new TextEncoder().encode(bytes.get(fileId));
+      }
+    },
+    notion: { read: async () => ({ supported: true, document: remote }) }
+  });
+  return { ...f, service, own, current, working, remote, bytes, reads };
+}
+
+it('exposes retained intervening evidence and resolves its text without replacing current remote protected metadata', async () => {
+  const { parseManaged } = await import('../../notion-managed.js');
+  const f = await interveningConflictFixture();
+  const opened = await f.service.read(id);
+  expect(opened.document).toEqual(f.own);
+  expect(opened.revision).toBe('current-C');
+  expect(opened.interveningVersion).toEqual({ fileId: 'intervening-B' });
+  expect(f.reads).not.toContain('intervening-B');
+  expect((await f.service.read(id, 'working')).document).toEqual(f.working);
+  expect(f.reads).toEqual(['intervening-B']);
+  expect((await f.service.read(id, 'fulcra')).document).toEqual(f.own);
+  await f.service.mutate({
+    operation: 'resolve',
+    id,
+    choice: 'working',
+    conflictId: other,
+    expectedRevision: opened.revision,
+    expectedNotion: opened.expectedNotion
+  });
+  const saved = await loadManifest(f.store, f.connection, crypto);
+  const chosen = saved.queue[id].document;
+  expect(chosen.title).toBe('Intervening B');
+  expect(parseManaged(chosen.markdown).blocks[0].texts).toEqual(['Intervening working B']);
+  expect(parseManaged(chosen.markdown).blocks[1]).toEqual(
+    parseManaged(f.remote.markdown).blocks[1]
+  );
+  expect(saved.queue[id].expectedRevision).toBe('current-C');
+  expect(saved.resolutions[id]).toMatchObject({ choice: 'working', fulcra: documentHash(chosen) });
+  expect(saved.entries[id].recoveryEdit.document).toEqual(f.own);
+  expect(f.file.content).toBe(encodeDocument(f.current));
+  expect(f.bytes.get('intervening-B')).toBe(encodeDocument(f.working));
+});
+
+it('keeps the retained version ID visible when its bytes are unavailable and refuses to resolve it', async () => {
+  const f = await interveningConflictFixture();
+  f.bytes.delete('intervening-B');
+  const opened = await f.service.read(id);
+  expect(opened.interveningVersion).toEqual({ fileId: 'intervening-B' });
+  await expect(f.service.read(id, 'working')).rejects.toThrow(/unavailable/i);
+  await expect(
+    f.service.mutate({
+      operation: 'resolve',
+      id,
+      choice: 'working',
+      conflictId: other,
+      expectedRevision: opened.revision,
+      expectedNotion: opened.expectedNotion
+    })
+  ).rejects.toThrow(/unavailable/i);
+  const saved = await loadManifest(f.store, f.connection, crypto);
+  expect(saved.queue[id]).toBeUndefined();
+  expect(saved.resolutions[id]).toBeUndefined();
+  expect(saved.entries[id].recoveryEdit.document).toEqual(f.own);
+});
+
+it('requires both an active conflict and a retained server-owned intervening reference', async () => {
+  const f = await interveningConflictFixture();
+  let m = await loadManifest(f.store, f.connection, crypto);
+  delete m.entries[id].recoveryEdit.interveningFileId;
+  await saveManifest(f.store, f.connection, m, crypto);
+  await expect(f.service.read(id, 'working')).rejects.toThrow(/retained|intervening/i);
+  await expect(
+    f.service.mutate({
+      operation: 'resolve',
+      id,
+      choice: 'working',
+      conflictId: other,
+      expectedRevision: 'current-C',
+      expectedNotion: documentHash(f.remote)
+    })
+  ).rejects.toThrow(/retained|intervening/i);
+  m = await loadManifest(f.store, f.connection, crypto);
+  m.entries[id].recoveryEdit.interveningFileId = 'intervening-B';
+  delete m.entries[id].conflict;
+  await saveManifest(f.store, f.connection, m, crypto);
+  await expect(f.service.read(id, 'working')).rejects.toThrow(/active conflict/i);
+  expect(f.reads).toEqual([]);
+});
+
+for (const missing of [true, false]) {
+  it(`keeps the accepted handoff document readable while the working copy is ${missing ? 'missing' : 'invalid'}`, async () => {
+    const f = fixture(),
+      m = await loadManifest(f.store, f.connection, crypto);
+    const accepted = { ...doc, markdown: 'Accepted across the file/provider handoff' };
+    m.entries[id].acceptedEdit = { document: accepted, fileId: 'accepted-file' };
+    await saveManifest(f.store, f.connection, m, crypto);
+    f.client.latestFile = async () =>
+      missing ? null : { ...f.file, content: 'invalid file bytes' };
+    const result = await f.service.read(id);
+    expect(result.document).toEqual(accepted);
+    expect(result.queued).toBe(true);
+    expect(result.workingReadUnavailable).toBe(true);
+    f.client.latestFile = async () => f.file;
+    await expect(
+      f.service.mutate({ operation: 'save', id, expectedRevision: f.file.id, document: doc })
+    ).rejects.toThrow(/sync|retained/i);
+    expect(
+      (await loadManifest(f.store, f.connection, crypto)).entries[id].acceptedEdit.document
+    ).toEqual(accepted);
+  });
+}
+
+it('allows conflict review after an accepted file handoff when Notion changed concurrently', async () => {
+  const f = fixture(),
+    m = await loadManifest(f.store, f.connection, crypto);
+  m.entries[id].acceptedEdit = { document: doc, fileId: f.file.id };
+  m.entries[id].status = 'conflict';
+  m.entries[id].conflict = {
+    id: other,
+    paths: [],
+    detectedAt: new Date().toISOString(),
+    expectedCurrent: { notion: documentHash(doc), fulcra: documentHash(doc) }
+  };
+  await saveManifest(f.store, f.connection, m, crypto);
+  const opened = await f.service.read(id);
+  expect(opened.queued).toBe(false);
+  expect(opened.conflict?.id).toBe(other);
+  expect(opened.document).toEqual(doc);
+});
+
+it('exposes accepted text with an explicit failed-read flag when the current history is ambiguous', async () => {
+  const f = fixture(),
+    m = await loadManifest(f.store, f.connection, crypto);
+  m.entries[id].acceptedEdit = { document: doc, fileId: f.file.id };
+  await saveManifest(f.store, f.connection, m, crypto);
+  f.client.latestFile = async () => {
+    throw Error('Ambiguous current working-file versions');
+  };
+  const opened = await f.service.read(id);
+  expect(opened.document).toEqual(doc);
+  expect(opened.revision).toBe(null);
+  expect(opened.workingReadUnavailable).toBe(true);
+  expect(opened.queued).toBe(true);
+  await expect(
+    f.service.mutate({ operation: 'save', id, document: doc, expectedRevision: f.file.id })
+  ).rejects.toThrow('Ambiguous current');
+  expect(
+    (await loadManifest(f.store, f.connection, crypto)).entries[id].acceptedEdit.document
+  ).toEqual(doc);
+});

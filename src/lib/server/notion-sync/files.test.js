@@ -10,7 +10,8 @@ it('reads the exact latest working-file version and retains intervening version 
               id: 'old',
               path: '/sync',
               name: 'doc.md',
-              state: 'uploaded',
+              state: 'archived',
+              uploaded_at: '2026-10-30T00:00:01Z',
               created_at: '2026-10-30T00:00:00Z'
             },
             {
@@ -18,10 +19,11 @@ it('reads the exact latest working-file version and retains intervening version 
               path: '/sync',
               name: 'doc.md',
               state: 'uploaded',
+              uploaded_at: '2026-10-31T00:00:01Z',
               created_at: '2026-10-31T00:00:00Z'
             },
             { id: 'foreign', path: '/other', name: 'doc.md', state: 'uploaded' },
-            { id: 'unuploaded', path: '/sync', name: 'doc.md', state: 'pending' }
+            { id: 'unuploaded', path: '/sync', name: 'doc.md', state: 'created' }
           ]
         })
   );
