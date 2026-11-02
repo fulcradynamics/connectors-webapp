@@ -50,7 +50,8 @@
       pattern: 'Short-lived tokens, calendar dates and historical reconciliation'
     }
   ];
-  const repo = 'https://github.com/fulcradynamics/connectors-webapp/blob/main';
+  const repo =
+    'https://github.com/fulcradynamics/connectors-webapp/blob/dab0be45d35c0e32b9704c8acb5dae7d9a1fa556';
 </script>
 
 <svelte:head
@@ -124,7 +125,7 @@
       </ol>
     </section>
     <section aria-labelledby="examples">
-      <h2 id="examples">The five implemented connectors</h2>
+      <h2 id="examples">The implemented connectors</h2>
       <p>
         Each setup guide explains exact supported data and limits. Code and test links require the
         public repository.
