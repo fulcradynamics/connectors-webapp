@@ -98,6 +98,7 @@ function fixture() {
       if (!remote.has(id)) throw Object.assign(Error('Provider status 404'), { status: 404 });
       return {
         id,
+        parentId: remote.get(id).parent ?? null,
         supported: true,
         titleProperty: 'title',
         bodyUnavailable: !!remote.get(id).document.archived,
@@ -856,4 +857,458 @@ it('continues ordinary provider polling while index delivery readback is delayed
   } finally {
     clock.mockRestore();
   }
+});
+
+it('persists managed edits one block at a time and reconciles a lost first PATCH response', async () => {
+  const { encodeManaged, parseManaged, planManagedEdit } = await import('../../notion-managed.js');
+  const f = fixture();
+  const capsule = {
+    version: 1,
+    pageId,
+    blocks: [pageId, newId].map((id, i) => ({
+      id,
+      type: 'paragraph',
+      editable: true,
+      texts: ['Text ' + i],
+      styles: [{ annotations: {}, link: null }],
+      attributes: { color: 'default' }
+    }))
+  };
+  f.remote.get(pageId).document = document(encodeManaged(capsule));
+  const read = f.notion.read;
+  f.notion.read = async (/** @type {string} */ id) => {
+    const r = await read(id);
+    return { ...r, managed: parseManaged(r.document.markdown) };
+  };
+  await initial(f);
+  const next = structuredClone(capsule);
+  next.blocks[0].texts = ['First edit'];
+  next.blocks[1].texts = ['Second edit'];
+  const file = await f.client.latestFile(f.path);
+  await createDocumentService({
+    store: nativeStore(f.state),
+    connection: f.state.connections[connectionId],
+    crypto,
+    client: f.client,
+    notion: f.notion,
+    credential: {}
+  }).mutate({
+    operation: 'save',
+    id: pageId,
+    expectedRevision: file.id,
+    document: document(encodeManaged(next))
+  });
+  let writes = 0,
+    lost = true;
+  f.notion.setBody = async (
+    /** @type {string} */ id,
+    /** @type {string} */ before,
+    /** @type {string} */ after
+  ) => {
+    const plan = planManagedEdit(before, after);
+    if (!plan) return before;
+    writes++;
+    f.remote.get(id).document.markdown = plan.intermediate;
+    if (lost) {
+      lost = false;
+      throw Error('lost managed PATCH reply');
+    }
+    return plan.intermediate;
+  };
+  await f.until(
+    async () =>
+      f.remote.get(pageId).document.markdown === encodeManaged(next) &&
+      (await f.manifest()).entries[pageId].status === 'synced',
+    150
+  );
+  expect(writes).toBe(2);
+  expect((await f.manifest()).entries[pageId].conflict).toBeUndefined();
+});
+it('rejects managed structure edits before changing the title or creating a provider page', async () => {
+  const { encodeManaged, parseManaged } = await import('../../notion-managed.js');
+  const f = fixture();
+  const capsule = {
+    version: 1,
+    pageId,
+    blocks: [
+      {
+        id: pageId,
+        type: 'paragraph',
+        editable: true,
+        texts: ['Text'],
+        styles: [{ annotations: {}, link: null }],
+        attributes: { color: 'default' }
+      }
+    ]
+  };
+  f.remote.get(pageId).document = document(encodeManaged(capsule));
+  const read = f.notion.read;
+  f.notion.read = async (/** @type {string} */ id) => {
+    const r = await read(id);
+    return { ...r, managed: parseManaged(r.document.markdown) };
+  };
+  await initial(f);
+  const forged = structuredClone(capsule);
+  forged.blocks[0].attributes.color = 'red';
+  f.put(f.path, encodeDocument(document(encodeManaged(forged), 'Should not apply')));
+  for (let i = 0; i < 30; i++) await f.tick();
+  expect(f.remote.get(pageId).document.title).toBe('Demo');
+  expect(f.calls).not.toContain('title');
+  f.put(
+    f.folder + '/' + newId + '.md',
+    encodeDocument(document(encodeManaged(capsule), 'Forged new page'))
+  );
+  for (let i = 0; i < 35; i++) await f.tick();
+  expect(f.calls).not.toContain('create');
+});
+
+/** Exercise native phases with a provider that hides archived bodies and changes one leaf per PATCH.
+ * @returns {Promise<any>} */
+async function mixedWorkerFixture() {
+  const { encodeManaged, parseManaged, planManagedEdit } = await import('../../notion-managed.js');
+  const f = fixture();
+  const capsule = {
+    version: 1,
+    pageId,
+    blocks: [
+      ...[newId, connectionId].map((id, index) => ({
+        id,
+        type: 'paragraph',
+        editable: true,
+        texts: ['Text ' + index],
+        styles: [{ annotations: {}, link: null }],
+        attributes: { color: 'default' }
+      })),
+      {
+        id: '44444444-4444-4444-8444-444444444444',
+        type: 'template',
+        editable: false,
+        snapshot: {
+          label: 'Add task',
+          children: [
+            {
+              id: '55555555-5555-4555-8555-555555555555',
+              type: 'paragraph',
+              text: 'Protected child'
+            }
+          ]
+        }
+      }
+    ]
+  };
+  f.remote.get(pageId).document = document(encodeManaged(capsule));
+  const read = f.notion.read;
+  f.notion.read = async (/** @type {string} */ id) => {
+    const result = await read(id);
+    return {
+      ...result,
+      managed: result.bodyUnavailable ? null : parseManaged(result.document.markdown)
+    };
+  };
+  /** @type {string[]} */
+  const events = [];
+  /** @type {string[]} */
+  const bodyWrites = [];
+  f.notion.setTitle = async (
+    /** @type {string} */ id,
+    /** @type {string} */ _property,
+    /** @type {string} */ title
+  ) => {
+    expect(f.remote.get(id).document.archived).toBe(false);
+    events.push('title');
+    f.remote.get(id).document.title = title;
+  };
+  f.notion.setBody = async (
+    /** @type {string} */ id,
+    /** @type {string} */ before,
+    /** @type {string} */ after,
+    /** @type {any} */ _credential,
+    /** @type {any} */ _deadline,
+    /** @type {any} */ projection
+  ) => {
+    expect(f.remote.get(id).document.archived).toBe(false);
+    expect(f.remote.get(id).document.markdown).toBe(before);
+    expect(projection.managed).toEqual(parseManaged(before));
+    const plan = planManagedEdit(before, after);
+    if (!plan) return before;
+    events.push('body');
+    bodyWrites.push(plan.blockId);
+    f.remote.get(id).document.markdown = plan.intermediate;
+    return plan.intermediate;
+  };
+  f.notion.setArchived = async (/** @type {string} */ id, /** @type {boolean} */ archived) => {
+    const event = archived ? 'archive' : 'restore';
+    events.push(event);
+    f.remote.get(id).document.archived = archived;
+  };
+  return Object.assign(f, { capsule, events, bodyWrites, encodeManaged, parseManaged });
+}
+
+it.each([
+  ['title and body', 'none'],
+  ['title and body', 'restore'],
+  ['title and body', 'title'],
+  ['title and body', 'body'],
+  ['title and body', 'archive'],
+  ['title only', 'none'],
+  ['body only', 'none']
+])(
+  'restores an archived mixed page before %s edits and rearchives after verified progress (%s response lost)',
+  async (changes, lostResponse) => {
+    const f = await mixedWorkerFixture();
+    await initial(f);
+    f.remote.get(pageId).document.archived = true;
+    await f.until(
+      async () =>
+        decodeDocument((await f.client.latestFile(f.path)).content).archived &&
+        (await f.manifest()).entries[pageId].status === 'synced'
+    );
+    const desired = structuredClone(f.capsule);
+    if (changes !== 'title only') desired.blocks[0].texts = ['Edited while archived'];
+    const desiredDocument = document(
+      f.encodeManaged(desired),
+      changes === 'body only' ? 'Demo' : 'Archived page renamed',
+      true
+    );
+    f.put(f.path, encodeDocument(desiredDocument));
+    const setArchived = f.notion.setArchived;
+    const setTitle = f.notion.setTitle;
+    const setBody = f.notion.setBody;
+    let lost = false;
+    /** @param {string} event */
+    const lose = (event) => {
+      if (!lost && lostResponse === event) {
+        lost = true;
+        throw Error('Lost committed ' + event + ' response');
+      }
+    };
+    f.notion.setArchived = async (/** @type {string} */ id, /** @type {boolean} */ value) => {
+      await setArchived(id, value);
+      lose(value ? 'archive' : 'restore');
+    };
+    f.notion.setTitle = async (/** @type {any[]} */ ...args) => {
+      await setTitle(...args);
+      lose('title');
+    };
+    f.notion.setBody = async (/** @type {any[]} */ ...args) => {
+      const result = await setBody(...args);
+      lose('body');
+      return result;
+    };
+    await f.until(
+      async () =>
+        documentHash(f.remote.get(pageId).document) === documentHash(desiredDocument) &&
+        (await f.manifest()).entries[pageId].status === 'synced',
+      150
+    );
+    expect(f.events).toEqual(
+      changes === 'title only'
+        ? ['restore', 'title', 'archive']
+        : changes === 'body only'
+          ? ['restore', 'body', 'archive']
+          : ['restore', 'title', 'body', 'archive']
+    );
+    expect(f.bodyWrites).toEqual(changes === 'title only' ? [] : [newId]);
+    expect(f.remote.get(pageId).document.archived).toBe(true);
+    expect(f.parseManaged(f.remote.get(pageId).document.markdown).blocks[2]).toEqual(
+      f.capsule.blocks[2]
+    );
+    expect(decodeDocument((await f.client.latestFile(f.path)).content)).toEqual(desiredDocument);
+    expect((await f.manifest()).entries[pageId].conflict).toBeUndefined();
+    if (lostResponse !== 'none') expect(lost).toBe(true);
+  }
+);
+
+it('conflicts on an opaque descendant change after a partial managed push and retains every desired text edit', async () => {
+  const f = await mixedWorkerFixture();
+  await initial(f);
+  const baseline = structuredClone((await f.manifest()).entries[pageId].baseline);
+  const desired = structuredClone(f.capsule);
+  desired.blocks[0].texts = ['First desired edit'];
+  desired.blocks[1].texts = ['Second desired edit'];
+  const desiredDocument = document(f.encodeManaged(desired));
+  f.put(f.path, encodeDocument(desiredDocument));
+  await f.until(async () => {
+    const pending = (await f.manifest()).pending;
+    return f.bodyWrites.length === 1 && pending?.kind === 'notion' && pending.phase === 'body';
+  });
+  const changed = f.parseManaged(f.remote.get(pageId).document.markdown);
+  changed.blocks[2].snapshot.children[0].text = 'Changed remotely during push';
+  f.remote.get(pageId).document.markdown = f.encodeManaged(changed);
+  await f.until(async () => (await f.manifest()).entries[pageId].status === 'conflict');
+  const entry = (await f.manifest()).entries[pageId];
+  expect(f.bodyWrites).toEqual([newId]);
+  expect(f.parseManaged(f.remote.get(pageId).document.markdown).blocks[1].texts).toEqual([
+    'Text 1'
+  ]);
+  expect(f.parseManaged(f.remote.get(pageId).document.markdown).blocks[2]).toEqual(
+    changed.blocks[2]
+  );
+  expect(decodeDocument((await f.client.latestFile(f.path)).content)).toEqual(desiredDocument);
+  expect(entry.baseline).toEqual(baseline);
+  const notionEvidence = decodeDocument(
+    (await f.client.latestFile(entry.conflict.paths[0].path)).content
+  );
+  const fulcraEvidence = decodeDocument(
+    (await f.client.latestFile(entry.conflict.paths[1].path)).content
+  );
+  expect(f.parseManaged(notionEvidence.markdown).blocks[2]).toEqual(changed.blocks[2]);
+  expect(fulcraEvidence).toEqual(desiredDocument);
+  for (let i = 0; i < 15; i++) await f.tick();
+  expect(f.bodyWrites).toEqual([newId]);
+  expect(decodeDocument((await f.client.latestFile(f.path)).content)).toEqual(desiredDocument);
+});
+
+it.each([false, true])(
+  'retains an accepted provider intent when its working file disappears (first block already written: %s)',
+  async (partiallyApplied) => {
+    const f = await mixedWorkerFixture();
+    await initial(f);
+    const desired = structuredClone(f.capsule);
+    desired.blocks[0].texts = ['Accepted first edit'];
+    desired.blocks[1].texts = ['Accepted second edit'];
+    const desiredDocument = document(f.encodeManaged(desired), 'Accepted renamed page');
+    const service = createDocumentService({
+      store: nativeStore(f.state),
+      connection: f.state.connections[connectionId],
+      crypto,
+      client: f.client,
+      notion: f.notion,
+      credential: {}
+    });
+    await service.mutate({
+      operation: 'save',
+      id: pageId,
+      expectedRevision: (await f.client.latestFile(f.path)).id,
+      document: desiredDocument
+    });
+    await f.until(async () => {
+      const pending = (await f.manifest()).pending;
+      return (
+        pending?.kind === 'notion' &&
+        (partiallyApplied ? f.bodyWrites.length === 1 : pending.phase === 'guard')
+      );
+    });
+    expect(decodeDocument((await f.client.latestFile(f.path)).content)).toEqual(desiredDocument);
+    expect((await f.manifest()).pending.desired).toEqual(desiredDocument);
+    const remoteBeforeMissing = structuredClone(f.remote.get(pageId).document);
+    const writesBeforeMissing = [...f.events];
+    f.files.delete(f.path);
+    await f.tick();
+    let m = await f.manifest();
+    expect(m.pending).toBeNull();
+    expect(m.entries[pageId].status).toBe('recovery_pending');
+    expect(m.entries[pageId].recoveryEdit.document).toEqual(desiredDocument);
+    for (let i = 0; i < 12; i++) await f.tick();
+    m = await f.manifest();
+    expect(m.entries[pageId].recoveryEdit.document).toEqual(desiredDocument);
+    expect(f.events).toEqual(writesBeforeMissing);
+    expect(f.remote.get(pageId).document).toEqual(remoteBeforeMissing);
+    expect(await f.client.latestFile(f.path)).toBeNull();
+    const restored = structuredClone(f.capsule);
+    restored.blocks[0].texts = ['New restored working copy'];
+    const restoredDocument = document(f.encodeManaged(restored));
+    f.put(f.path, encodeDocument(restoredDocument));
+    await f.until(async () => (await f.manifest()).entries[pageId].status === 'conflict');
+    m = await f.manifest();
+    expect(m.entries[pageId].recoveryEdit.document).toEqual(desiredDocument);
+    const retained = decodeDocument(
+      (await f.client.latestFile(m.entries[pageId].conflict.paths[1].path)).content
+    );
+    expect(retained).toEqual(desiredDocument);
+    expect(decodeDocument((await f.client.latestFile(f.path)).content)).toEqual(restoredDocument);
+    expect(f.events).toEqual(writesBeforeMissing);
+    expect(f.remote.get(pageId).document).toEqual(remoteBeforeMissing);
+  }
+);
+
+it.each(['child', 'local'])(
+  'quarantines a moved %s page before provider mutation while retaining its accepted desired document',
+  async (origin) => {
+    const f = fixture();
+    await initial(f);
+    const path = `${f.folder}/${newId}.md`;
+    if (origin === 'child')
+      f.remote.set(newId, { parent: pageId, document: document('Discovered child') });
+    else f.put(path, encodeDocument(document('Local created page')));
+    const start = await f.manifest();
+    start.scanRequested = true;
+    await f.save(start);
+    await f.until(async () => (await f.manifest()).entries[newId]?.status === 'synced');
+    expect((await f.manifest()).entries[newId].origin).toBe(origin);
+    const desired = document('Accepted pending child edit', 'Accepted child rename', true);
+    await createDocumentService({
+      store: nativeStore(f.state),
+      connection: f.state.connections[connectionId],
+      crypto,
+      client: f.client,
+      notion: f.notion,
+      credential: {}
+    }).mutate({
+      operation: 'save',
+      id: newId,
+      expectedRevision: (await f.client.latestFile(path)).id,
+      document: desired
+    });
+    await f.until(async () => {
+      const pending = (await f.manifest()).pending;
+      return pending?.kind === 'notion' && pending.entryId === newId && pending.phase === 'guard';
+    });
+    const providerCalls = () =>
+      f.calls.filter((/** @type {string} */ call) =>
+        ['title', 'body', 'archive', 'create'].includes(call)
+      );
+    const beforeCalls = [...providerCalls()];
+    const beforeRemote = structuredClone(f.remote.get(newId).document);
+    f.remote.get(newId).parent = '44444444-4444-4444-8444-444444444444';
+    await f.tick();
+    let m = await f.manifest();
+    expect(m.pending).toBeNull();
+    expect(m.entries[newId].status).toBe('quarantined');
+    expect(m.entries[newId].error).toBe('Notion page moved outside the configured creation parent');
+    expect(m.entries[newId].recoveryEdit.document).toEqual(desired);
+    expect(m.entries[newId].deferred).toBeUndefined();
+    expect(providerCalls()).toEqual(beforeCalls);
+    expect(f.remote.get(newId).document).toEqual(beforeRemote);
+    expect(decodeDocument((await f.client.latestFile(path)).content)).toEqual(desired);
+    f.remote.get(pageId).document.markdown = 'Healthy selected page continues';
+    await f.until(async () => {
+      const current = await f.client.latestFile(f.path);
+      return (
+        decodeDocument(current.content).markdown === 'Healthy selected page continues' &&
+        (await f.manifest()).entries[pageId].status === 'synced'
+      );
+    });
+    m = await f.manifest();
+    expect(m.entries[newId].status).toBe('quarantined');
+    expect(m.entries[newId].recoveryEdit.document).toEqual(desired);
+    expect(providerCalls()).toEqual(beforeCalls);
+    expect(f.remote.get(newId).document).toEqual(beforeRemote);
+    // Restoring scope permits fresh review, never automatic replay of the quarantined edit.
+    f.remote.get(newId).parent = pageId;
+    await f.until(async () => (await f.manifest()).entries[newId].status === 'conflict');
+    m = await f.manifest();
+    const retained = decodeDocument(
+      (await f.client.latestFile(m.entries[newId].conflict.paths[1].path)).content
+    );
+    expect(retained).toEqual(desired);
+    expect(providerCalls()).toEqual(beforeCalls);
+    expect(f.remote.get(newId).document).toEqual(beforeRemote);
+  }
+);
+
+it('continues syncing an explicitly selected page by ID after its provider parent changes', async () => {
+  const f = fixture();
+  await initial(f);
+  f.remote.get(pageId).parent = '44444444-4444-4444-8444-444444444444';
+  const desired = document('Explicitly selected content', 'Selected page moved');
+  f.put(f.path, encodeDocument(desired));
+  await f.until(
+    async () =>
+      documentHash(f.remote.get(pageId).document) === documentHash(desired) &&
+      (await f.manifest()).entries[pageId].status === 'synced'
+  );
+  expect((await f.manifest()).entries[pageId].origin).toBe('selected');
+  expect((await f.manifest()).entries[pageId].error).toBeUndefined();
+  expect(f.calls.filter((/** @type {string} */ call) => call === 'body')).toHaveLength(1);
 });

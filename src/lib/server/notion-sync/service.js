@@ -1,8 +1,9 @@
+import { isManaged, validateManagedEdit, rebaseManagedText } from '../../notion-managed.js';
 import { indexStatusView } from './index.js';
 import { retainArchivedBody } from './archive-body.js';
 import { randomUUID } from 'node:crypto';
 import { loadManifest, saveManifest, workingFolder } from './state.js';
-import { pageId, createNotionPages } from './notion.js';
+import { pageId, createNotionPages, assertNotionPageScope } from './notion.js';
 import { normalizeDocument, decodeDocument, documentHash } from './document.js';
 import { contentHash } from '../sync/identity.js';
 /** Protected owner operations queue edits; only the persisted worker performs provider writes.
@@ -98,11 +99,17 @@ export function createDocumentService({
     let expectedNotion = null;
     if (e.conflict) {
       const remote = await retainArchivedBody(
-        await notion.read(e.notionId, credential),
+        await notion.read(
+          e.notionId,
+          credential,
+          undefined,
+          e.origin === 'selected' ? null : connection.config.twoWay.parentId
+        ),
         e,
         client,
         m.pending
       );
+      assertNotionPageScope(connection, e, remote);
       if (!remote.supported) throw Error('Notion Markdown is incomplete or unsupported');
       expectedNotion = documentHash(remote.document);
       if (view !== 'current')
@@ -143,8 +150,10 @@ export function createDocumentService({
       throw Error('Invalid document action fields');
     if (input.operation === 'create') {
       if (Object.keys(m.entries).length >= 50) throw Error('Two-way mapped-page capacity reached');
-      const document = normalizeDocument(input.document),
-        id = randomUUID();
+      const document = normalizeDocument(input.document);
+      if (isManaged(document.markdown))
+        throw Error('Invalid managed document: create a normal page first');
+      const id = randomUUID();
       if (document.archived) throw Error('Create an unarchived document first');
       m.entries[id] = {
         localId: id,
@@ -187,12 +196,18 @@ export function createDocumentService({
       if (!['notion', 'fulcra'].includes(input.choice) || input.conflictId !== e.conflict?.id)
         throw Error('Conflict changed; reload both versions before resolving');
       const remote = await retainArchivedBody(
-          await notion.read(e.notionId, credential),
+          await notion.read(
+            e.notionId,
+            credential,
+            undefined,
+            e.origin === 'selected' ? null : connection.config.twoWay.parentId
+          ),
           e,
           client,
           m.pending
         ),
         local = decodeDocument(file.content);
+      assertNotionPageScope(connection, e, remote);
       if (!remote.supported || input.expectedNotion !== documentHash(remote.document))
         throw Error('Conflict changed: a newer Notion version exists; reload');
       const expected = e.conflict.expectedCurrent;
@@ -202,7 +217,15 @@ export function createDocumentService({
         expected.fulcra !== documentHash(local)
       )
         throw Error('Conflict changed: sync and reload the current versions');
-      const chosen = await snapshot(e.conflict.paths[input.choice === 'notion' ? 0 : 1]);
+      let chosen = await snapshot(e.conflict.paths[input.choice === 'notion' ? 0 : 1]);
+      if (
+        input.choice === 'fulcra' &&
+        (isManaged(chosen.markdown) || isManaged(remote.document.markdown))
+      )
+        chosen = normalizeDocument({
+          ...chosen,
+          markdown: rebaseManagedText(chosen.markdown, remote.document.markdown)
+        });
       if (input.choice === 'fulcra' && documentHash(chosen) !== documentHash(local))
         m.queue[e.localId] = { document: chosen, expectedRevision: file.id };
       m.resolutions[e.localId] = {
@@ -222,6 +245,9 @@ export function createDocumentService({
         input.operation === 'archive'
           ? normalizeDocument({ ...decodeDocument(file.content), archived: input.archived })
           : normalizeDocument(input.document);
+      const before = decodeDocument(file.content);
+      if (isManaged(before.markdown) || isManaged(document.markdown))
+        validateManagedEdit(before.markdown, document.markdown);
       m.queue[e.localId] = { document, expectedRevision: file.id };
     }
     await save(m);

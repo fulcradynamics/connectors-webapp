@@ -246,3 +246,111 @@ it('keeps held saved text readable when working-file bytes cannot be decoded', a
   };
   expect((await f.service.read(id)).document.markdown).toBe('Retained accepted text');
 });
+
+it('rejects managed scope/layout edits and forged managed new pages before queue acceptance', async () => {
+  const { encodeManaged } = await import('../../notion-managed.js');
+  const f = fixture();
+  const capsule = {
+    version: 1,
+    pageId: id,
+    blocks: [
+      {
+        id,
+        type: 'paragraph',
+        editable: true,
+        texts: ['Original'],
+        styles: [{ annotations: {}, link: null }],
+        attributes: { color: 'default' }
+      }
+    ]
+  };
+  const managed = { ...doc, markdown: encodeManaged(capsule) };
+  f.file.content = encodeDocument(managed);
+  await expect(f.service.mutate({ operation: 'create', document: managed })).rejects.toThrow(
+    /managed/i
+  );
+  const invalid = structuredClone(capsule);
+  invalid.blocks[0].attributes.color = 'red';
+  await expect(
+    f.service.mutate({
+      operation: 'save',
+      id,
+      expectedRevision: 'version-1',
+      document: { ...managed, markdown: encodeManaged(invalid) }
+    })
+  ).rejects.toThrow(/managed/i);
+  const m = await loadManifest(f.store, f.connection, crypto);
+  expect(Object.keys(m.queue)).toHaveLength(0);
+  const edit = structuredClone(capsule);
+  edit.blocks[0].texts = ['Allowed'];
+  await expect(
+    f.service.mutate({
+      operation: 'save',
+      id,
+      expectedRevision: 'version-1',
+      document: { ...managed, markdown: encodeManaged(edit) }
+    })
+  ).resolves.toMatchObject({ queued: true });
+});
+
+it('resolves chosen Fulcra mixed text while preserving freshly reviewed opaque content', async () => {
+  const { encodeManaged, parseManaged } = await import('../../notion-managed.js');
+  const { contentHash } = await import('../sync/identity.js');
+  const f = fixture();
+  const capsule = {
+    version: 1,
+    pageId: id,
+    blocks: [
+      {
+        id,
+        type: 'paragraph',
+        editable: true,
+        texts: ['Chosen Fulcra text'],
+        styles: [{}],
+        attributes: {}
+      },
+      { id: other, type: 'embed', editable: false, snapshot: { url: 'https://example.com/old' } }
+    ]
+  };
+  const chosen = { ...doc, markdown: encodeManaged(capsule) };
+  const fresh = structuredClone(capsule);
+  fresh.blocks[0].texts = ['Current source text'];
+  fresh.blocks[1].snapshot = { url: 'https://example.com/new' };
+  const remote = { ...doc, markdown: encodeManaged(fresh) };
+  f.file.content = encodeDocument(chosen);
+  const m = await loadManifest(f.store, f.connection, crypto);
+  m.entries[id].status = 'conflict';
+  m.entries[id].conflict = {
+    id: other,
+    paths: [
+      { path: '/n', hash: contentHash(encodeDocument(remote)) },
+      { path: '/f', hash: contentHash(encodeDocument(chosen)) }
+    ],
+    expectedCurrent: { notion: documentHash(remote), fulcra: documentHash(chosen) }
+  };
+  await saveManifest(f.store, f.connection, m, crypto);
+  const service = createDocumentService({
+    store: f.store,
+    connection: f.connection,
+    crypto,
+    credential: {},
+    client: {
+      latestFile: async (/** @type {string} */ path) =>
+        path === '/f' ? { content: encodeDocument(chosen) } : f.file
+    },
+    notion: { read: async () => ({ supported: true, document: remote }) }
+  });
+  await service.mutate({
+    operation: 'resolve',
+    id,
+    choice: 'fulcra',
+    conflictId: other,
+    expectedRevision: 'version-1',
+    expectedNotion: documentHash(remote)
+  });
+  const saved = await loadManifest(f.store, f.connection, crypto);
+  const queued = saved.queue[id].document;
+  expect(parseManaged(queued.markdown).blocks[0].texts).toEqual(['Chosen Fulcra text']);
+  expect(parseManaged(queued.markdown).blocks[1]).toEqual(fresh.blocks[1]);
+  expect(saved.resolutions[id].fulcra).toBe(documentHash(queued));
+});
