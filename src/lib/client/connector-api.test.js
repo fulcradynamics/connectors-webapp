@@ -184,3 +184,59 @@ it('retains an uncertain type creation reference and never sends a new creation'
   ).toBe('/api/native/operations/type');
   vi.unstubAllGlobals();
 });
+it('recovers a transient initial server error with the same command and payload', async () => {
+  const replies = [
+    Response.json({ message: 'Internal Error' }, { status: 500 }),
+    Response.json({ created: true })
+  ];
+  const fetchImpl = vi.fn(async (_path, _init) => replies.shift());
+  const init = {
+    method: 'POST',
+    body: JSON.stringify({
+      operation: 'create',
+      document: { title: 'Demo', markdown: 'Demo', archived: false }
+    })
+  };
+  expect(
+    await connectorRequest(
+      '/api/connections/00000000-0000-4000-8000-000000000001/documents',
+      init,
+      {
+        fetchImpl: /** @type {any} */ (fetchImpl),
+        delay: async () => {}
+      }
+    )
+  ).toEqual({ created: true });
+  expect(fetchImpl).toHaveBeenCalledTimes(2);
+  expect(fetchImpl.mock.calls[0][1]).toEqual(fetchImpl.mock.calls[1][1]);
+});
+
+it('does not replay mutations whose backend may not deduplicate commands', async () => {
+  const fetchImpl = vi.fn(async () =>
+    Response.json({ message: 'Gateway failure' }, { status: 502 })
+  );
+  await expect(
+    connectorRequest(
+      '/api/connections',
+      { method: 'POST', body: '{}' },
+      { fetchImpl, delay: async () => {} }
+    )
+  ).rejects.toThrow('Gateway failure');
+  expect(fetchImpl).toHaveBeenCalledTimes(1);
+});
+
+it('retries an implicit GET read after a transient server failure', async () => {
+  const replies = [
+    Response.json({ message: 'Unavailable' }, { status: 503 }),
+    Response.json({ documents: [] })
+  ];
+  const fetchImpl = vi.fn(async () => replies.shift());
+  expect(
+    await connectorRequest(
+      '/api/connections/example/documents',
+      {},
+      { fetchImpl: /** @type {any} */ (fetchImpl), delay: async () => {} }
+    )
+  ).toEqual({ documents: [] });
+  expect(fetchImpl).toHaveBeenCalledTimes(2);
+});

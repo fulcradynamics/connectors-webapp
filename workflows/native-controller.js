@@ -4,6 +4,7 @@ import {
   publishState,
   replyToCommand,
   startSuccessor,
+  wakeSuccessor,
   workPhase,
   sendCommand,
   operationFailure,
@@ -68,6 +69,7 @@ export async function nativeController(state, token) {
   state.epoch++;
   const nextRunId = await startSuccessor(state, token);
   await publishState(state, nextRunId);
+  await wakeSuccessor(nextRunId);
   return { nextRunId };
 }
 /** @param {string} token @param {string} id @param {any} envelope */

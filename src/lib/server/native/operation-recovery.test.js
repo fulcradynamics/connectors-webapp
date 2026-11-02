@@ -40,12 +40,15 @@ async function interrupted(known) {
       : {
           status: 'running',
           getReadable: () =>
-            new ReadableStream({
-              start(c) {
-                c.enqueue({ server: seal(state, 'test:owner:native-snapshot', crypto) });
-                c.close();
-              }
-            })
+            Object.assign(
+              new ReadableStream({
+                start(c) {
+                  c.enqueue({ server: seal(state, 'test:owner:native-snapshot', crypto) });
+                  c.close();
+                }
+              }),
+              { getTailIndex: async () => 0 }
+            )
         }
   );
   const ticket = seal(

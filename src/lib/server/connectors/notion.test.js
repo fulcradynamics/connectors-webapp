@@ -1,5 +1,6 @@
 import { it, expect, vi } from 'vitest';
 import { createNotion } from './notion.js';
+import { previewConnection } from '../connections.js';
 const connection = { config: { resources: ['root'], backfillSince: '2026-01-01T00:00:00Z' } };
 /** @param {any} fetchImpl @param {any} checkpoint */
 const read = (fetchImpl, checkpoint = null) =>
@@ -69,4 +70,41 @@ it('refuses traversal state outside selected roots and records lost access expli
   expect(fetchImpl).not.toHaveBeenCalled();
   const page = await read(async () => Response.json({}, { status: 404 }));
   expect(page.changes[0].operation).toBe('access_lost');
+});
+
+it('previews a discovered 23-page selection and retains a bounded source guard', async () => {
+  const resources = Array.from({ length: 23 }, (_, i) => `page-${i}`);
+  const fetchImpl = vi.fn(async (url) =>
+    String(url).includes('/pages/')
+      ? Response.json({
+          id: resources[0],
+          properties: {},
+          last_edited_time: '2026-10-01T00:00:00Z'
+        })
+      : Response.json({ results: [], has_more: false })
+  );
+  const selected = {
+    id: 'connection',
+    connector: 'notion',
+    account_id: 'account',
+    config: { ...connection.config, resources, route: { mode: 'file', folder: '/test' } }
+  };
+  const preview = await previewConnection(
+    selected,
+    createNotion({ fetchImpl }),
+    { token: 'test' },
+    'owner'
+  );
+  expect(preview.complete).toBe(true);
+  expect(preview.writesPerformed).toBe(false);
+  expect(preview.outputs[0].record.payload.id).toBe('page-0');
+  await expect(
+    createNotion({ fetchImpl }).readPage({
+      connection: { config: { resources: Array.from({ length: 51 }, (_, i) => `page-${i}`) } },
+      credential: { token: 'test' },
+      checkpoint: null,
+      deadline: Date.now() + 10000
+    })
+  ).rejects.toThrow(/required_configuration/);
+  expect(fetchImpl).toHaveBeenCalledTimes(2);
 });

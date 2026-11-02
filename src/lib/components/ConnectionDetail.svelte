@@ -3,7 +3,9 @@
   import CredentialLinks from './CredentialLinks.svelte';
   import { onMount, untrack } from 'svelte';
   import ConnectionForm from './ConnectionForm.svelte';
+  import NotionDocuments from './NotionDocuments.svelte';
   import {
+    MAX_SELECTED_SOURCES,
     getConnectorSetup,
     setupDefaults,
     describeDestination,
@@ -26,6 +28,8 @@
   const stages = ['Sources', 'Destination', 'Schedule', 'Review'];
   let step = $state(0);
   let resources = $state<any[]>([]);
+  let twoWayEnabled = $state(!!initial.config.twoWay?.enabled);
+  let twoWayParent = $state(initial.config.twoWay?.parentId ?? '');
   let cursor = $state<string | null>(null);
   let selected = $state<string[]>(initial.config.resources ?? []);
   let mode = $state(defaults.mode);
@@ -44,6 +48,11 @@
   let creatingType = $state(false);
   let typeName = $state('');
   let typeDescription = $state('');
+  const sourcesReady = $derived(
+    selected.length > 0 &&
+      selected.length <= MAX_SELECTED_SOURCES &&
+      (!twoWayEnabled || selected.includes(twoWayParent))
+  );
   const destinationReady = $derived(
     (mode === 'record' || !!folder.trim()) && (mode === 'file' || !!recordType)
   );
@@ -105,6 +114,7 @@
     await action(async () => {
       const result = await api(`/api/connections/${connection.id}`, 'PUT', {
         resources: selected,
+        twoWay: twoWayEnabled ? { enabled: true, parentId: twoWayParent } : null,
         backfillSince: new Date(since + 'T00:00:00Z').toISOString(),
         intervalSeconds: Number(interval),
         route: { mode, folder, recordType }
@@ -197,7 +207,11 @@
         Number(interval)
       )} · initial date {since}.
     </p>
-    <p>{info.output}</p>
+    <p>
+      {connection.config.twoWay?.enabled
+        ? 'Two-way Notion ↔ Fulcra: editable page titles, Markdown and recoverable archive/restore. Other Notion properties and comments are not mirrored.'
+        : info.output}
+    </p>
     <p>
       Configuration and preview do not import data. A connection must be enabled before writes
       begin.
@@ -208,7 +222,7 @@
         class:active={step === i}
         aria-current={step === i ? 'step' : undefined}
         disabled={busy ||
-          (i > 0 && !selected.length) ||
+          (i > 0 && !sourcesReady) ||
           (i > 1 && !destinationReady) ||
           (i === 3 && !preview)}
         onclick={() => (step = i)}>{stage}</button
@@ -220,7 +234,41 @@
           <h3>3. Select {info.sourceLabel}</h3>
           <p>
             {info.sourceHelp} Only the IDs you select are collected. Discovery does not enable syncing.
+            Choose up to {MAX_SELECTED_SOURCES} per connection.
           </p>
+          {#if connection.connector === 'notion'}
+            <label class="choice"
+              ><input
+                type="checkbox"
+                bind:checked={twoWayEnabled}
+                onchange={() => {
+                  if (twoWayEnabled) mode = 'file';
+                  invalidate();
+                }}
+              /><span>Enable two-way Notion ↔ Fulcra sync</span></label
+            >
+            {#if twoWayEnabled}
+              <p>
+                Two-way sync can update, create, archive and restore Notion pages. In the Notion
+                connection console → Configuration, enable Read content, Update content and Insert
+                content. Keep comment, user and agent access off. Nothing writes until you preview
+                and enable below.
+              </p>
+              <label
+                >Creation parent page<select bind:value={twoWayParent} onchange={invalidate}
+                  ><option value="">Choose a selected page</option>{#each selected as id}<option
+                      value={id}>{resources.find((r) => r.id === id)?.name ?? id}</option
+                    >{/each}</select
+                ></label
+              >
+              <p>
+                New pages created from Fulcra become children of this page; new Notion children here
+                are discovered automatically. Editable working files go under the destination’s live
+                folder for this connection. The parent, folder and initial selection are fixed once
+                bound; use another connection for a different scope.
+              </p>
+            {/if}
+          {/if}
           <button class="secondary" disabled={busy} onclick={discover}
             >{loaded
               ? cursor
@@ -241,10 +289,16 @@
               No accessible {info.sourceLabel} were returned. Check the credential permissions and provider
               sharing settings.
             </p>{/if}
+          {#if loaded && !resources.length && info.sourceTroubleshooting}<p>
+              {info.sourceTroubleshooting}
+            </p>{/if}
+          {#if selected.length > MAX_SELECTED_SOURCES}<p role="alert" class="error">
+              Select at most {MAX_SELECTED_SOURCES} sources per connection.
+            </p>{/if}
           {#if selected.length && !resources.length}<p>
               {selected.length} sources saved. Rediscover to edit them.
             </p>{/if}
-          <button class="primary" disabled={busy || !selected.length} onclick={() => (step = 1)}
+          <button class="primary" disabled={busy || !sourcesReady} onclick={() => (step = 1)}
             >Continue to destination</button
           >
         </section>{:else if step === 1}<section class="stage">
@@ -255,7 +309,7 @@
             each connection.
           </p>
           <label
-            >Write format<select bind:value={mode} onchange={invalidate}
+            >Write format<select bind:value={mode} disabled={twoWayEnabled} onchange={invalidate}
               ><option value="file">Files in a folder</option><option value="record"
                 >v1 records</option
               ><option value="both">Files + v1 records</option></select
@@ -269,9 +323,16 @@
               /></label
             >
             <p>
-              Files go under this path, grouped by stable source revision. For example <code
-                >{folder || '/your-folder'}/revision-id/document</code
-              >. Existing history is retained.
+              {#if twoWayEnabled}
+                Editable working copies go under <code
+                  >{folder || '/your-folder'}/live/{connection.id}/page-id.md</code
+                >. Edit the title, Markdown or archived field there, or use the editor below.
+                Earlier versions are retained.
+              {:else}
+                Files go under this path, grouped by stable source revision. For example <code
+                  >{folder || '/your-folder'}/revision-id/document</code
+                >. Existing history is retained.
+              {/if}
             </p>{/if}
           {#if mode !== 'file'}<label
               >Recordable v1 data type<select bind:value={recordType} onchange={invalidate}
@@ -408,7 +469,7 @@
           <button
             class="primary"
             disabled={busy ||
-              !selected.length ||
+              !sourcesReady ||
               !destinationReady ||
               Number(interval) < 60 ||
               Number(interval) > 86400 ||
@@ -461,6 +522,10 @@
     </fieldset>
   </div>
   {#if message}<p role="alert" class="error">{message}</p>{/if}
+  {#if connection.connector === 'notion' && connection.config.twoWay?.enabled}<NotionDocuments
+      connectionId={connection.id}
+      active={connection.status === 'ready'}
+    />{/if}
   <div class="actions">
     <button class="secondary" disabled={busy} onclick={() => (replacing = true)}
       >Replace credential</button

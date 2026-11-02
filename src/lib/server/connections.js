@@ -1,3 +1,5 @@
+import { workingFolder } from './notion-sync/state.js';
+import { MAX_SELECTED_SOURCES } from '../connectors/setup.js';
 import { canonical, contentHash } from './sync/identity.js';
 import { prepareOutput } from './sync/runner.js';
 import { unseal } from './secrets.js';
@@ -7,19 +9,28 @@ export function validateConfig(input, discovered, ownerId) {
   if (
     !input ||
     Object.keys(input).some(
-      (k) => !['resources', 'backfillSince', 'intervalSeconds', 'route', 'routeVersion'].includes(k)
+      (k) =>
+        ![
+          'resources',
+          'backfillSince',
+          'intervalSeconds',
+          'route',
+          'routeVersion',
+          'twoWay'
+        ].includes(k)
     )
   )
     throw new Error('Invalid configuration fields');
   if (
     !Array.isArray(input.resources) ||
     input.resources.length < 1 ||
-    input.resources.length > 20 ||
     input.resources.some(
       (/** @type {any} */ id) => typeof id !== 'string' || !discovered.includes(id)
     )
   )
     throw new Error('Select discovered sources');
+  if (input.resources.length > MAX_SELECTED_SOURCES)
+    throw new Error(`Select at most ${MAX_SELECTED_SOURCES} sources per connection`);
   if (
     !Number.isInteger(input.intervalSeconds) ||
     input.intervalSeconds < 60 ||
@@ -34,8 +45,25 @@ export function validateConfig(input, discovered, ownerId) {
     Object.keys(input.route).some((k) => !['mode', 'folder', 'recordType', 'ownerId'].includes(k))
   )
     throw new Error('Invalid destination configuration');
+  let twoWay;
+  if (input.twoWay != null) {
+    if (
+      Object.keys(input.twoWay).some((k) => !['enabled', 'parentId'].includes(k)) ||
+      input.twoWay.enabled !== true
+    )
+      throw Error('Invalid two-way configuration');
+    if (
+      typeof input.twoWay.parentId !== 'string' ||
+      !input.resources.includes(input.twoWay.parentId) ||
+      !/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/i.test(input.twoWay.parentId)
+    )
+      throw Error('Choose a selected page as the two-way creation parent');
+    if (input.route.mode !== 'file') throw Error('Choose file output for two-way sync');
+    twoWay = { enabled: true, parentId: input.twoWay.parentId };
+  }
   return {
     resources: [...new Set(input.resources)],
+    ...(twoWay ? { twoWay } : {}),
     backfillSince: new Date(since).toISOString(),
     intervalSeconds: input.intervalSeconds,
     routeVersion: input.routeVersion ?? 1,
@@ -50,6 +78,28 @@ export function validateConfig(input, discovered, ownerId) {
 /** @param {any} connection @param {any} adapter @param {any} credential @param {string} ownerId */
 export async function previewConnection(connection, adapter, credential, ownerId) {
   const deadline = Date.now() + 25000;
+  if (connection.config.twoWay?.enabled) {
+    if (!adapter.readDocument) throw Error('Two-way preview requires the Notion Markdown adapter');
+    const outputs = [];
+    for (const id of connection.config.resources.slice(0, 2)) {
+      const sample = await adapter.readDocument(id, credential, deadline);
+      outputs.push({
+        pageId: id,
+        title: sample.document.title,
+        supported: sample.supported,
+        path: workingFolder(connection) + '/' + id + '.md',
+        document: sample.supported ? sample.document : null
+      });
+    }
+    return {
+      outputs,
+      writesPerformed: false,
+      complete: true,
+      hasMore: connection.config.resources.length > 2,
+      detail:
+        'Two-way mode writes editable Fulcra copies and can update, create, archive and restore Notion pages. Unsupported documents remain read-only.'
+    };
+  }
   let checkpoint = null;
   for (let n = 0; n < 4 && Date.now() + 1000 < deadline; n++) {
     /** @type {any} */
@@ -119,6 +169,7 @@ export function configurationUpdate(old, input, discovered, ownerId) {
   config.routeVersion = old.routeVersion ? old.routeVersion + (routingChanged ? 1 : 0) : 1;
   const resetCheckpoint =
     routingChanged ||
+    canonical(old.twoWay) !== canonical(config.twoWay) ||
     canonical(old.resources) !== canonical(config.resources) ||
     normalizedOld.backfillSince !== config.backfillSince;
   return { config, resetCheckpoint, changed: canonical(normalizedOld) !== canonical(config) };

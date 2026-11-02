@@ -52,6 +52,7 @@ export function nativeStore(state) {
     }
   };
   const store = {
+    supportsTwoWay: true,
     deploymentId: state.deploymentId,
     ownerId: state.ownerId,
     assertOwner: async () => true,

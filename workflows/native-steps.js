@@ -1,5 +1,7 @@
 import { getWritable } from 'workflow';
 import { start, resumeHook } from 'workflow/api';
+import { reenqueueRun } from '@workflow/core/runtime';
+import { getWorld } from 'workflow/runtime';
 import { nativeController } from './native-controller.js';
 import { executeCommand, cryptoOptions } from '../src/lib/server/native/commands.js';
 import {
@@ -80,6 +82,15 @@ export async function publishState(state, nextRunId = undefined) {
 export async function startSuccessor(state, token) {
   'use step';
   return (await start(nativeController, [state, token], { deploymentId: 'latest' })).runId;
+}
+/** Re-deliver only an existing pending successor after its pointer is durable.
+ * This separate step retries the same run and never repeats successor creation.
+ * @param {string} runId */
+export async function wakeSuccessor(runId) {
+  'use step';
+  const world = await getWorld();
+  const run = await world.runs.get(runId, { resolveData: 'none' });
+  if (run.status === 'pending') await reenqueueRun(world, runId);
 }
 /** @param {string} token @param {any} command */
 export async function sendCommand(token, command) {
