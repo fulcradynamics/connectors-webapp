@@ -22,7 +22,7 @@ Imported content lives in Fulcra. Credentials and staged source bodies are addit
 
 A revision ID includes owner, connector, source account, route version, source ID/version and canonical payload. The same revision must produce stable artifact bytes. Source changes create new revisions; imports are retained after deletion/access loss. Cross-service exactly-once transactions are not claimed.
 
-Native state is bounded: 20 connections, up to 50 selected discovered sources per connection, 100 changes per page, 1 MiB staged values, a 1.5 MiB worker-state budget and a 2 MiB normal total budget. Large roots/backfills may need smaller selections or multiple cycles. Source staging expires logically after 24 hours. Platform history follows hosting retention; see [operations](operations.md) and [provider limits](user-guide.md#connect-a-service).
+Native state is bounded: 20 connections, up to 50 selected discovered sources per connection (Attio supports 1,000 exact selected records), 100 changes per page, 1 MiB staged values, a 1.5 MiB worker-state budget and a 2 MiB normal total budget. Large roots/backfills may need smaller selections or multiple cycles. Source staging expires logically after 24 hours. Platform history follows hosting retention; see [operations](operations.md) and [provider limits](user-guide.md#connect-a-service).
 
 ## Opt-in Notion two-way pages
 

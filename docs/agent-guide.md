@@ -9,10 +9,10 @@ These are project instructions for a coding agent working at its user's request.
 
 ## Get the source and run the real examples
 
-Repository: https://github.com/fulcradynamics/connectors-webapp. The hosted reference currently previews [PR #4](https://github.com/fulcradynamics/connectors-webapp/pull/4) on `feat/attio-two-way`, including Attio and related unmerged Notion/runtime work. Attio is not yet on `main`. Use this published preview branch to reproduce the hosted examples; `main` remains the reviewed baseline and the target for contributions. Inspect an existing checkout before changing it and keep unrelated work intact. If your fork copied only `main`, fetch the preview branch from the upstream repository before creating your own working branch; keep your own fork as the push destination.
+Repository: https://github.com/fulcradynamics/connectors-webapp. The hosted reference currently previews [PR #5](https://github.com/fulcradynamics/connectors-webapp/pull/5) on `feat/knowledge-source-discovery`, including Attio, source discovery, knowledge-maintenance setup and related Notion/runtime work. These preview changes await the required non-author review before `main`. Use this published preview branch to reproduce the hosted examples; `main` remains the reviewed baseline and the target for contributions. Inspect an existing checkout before changing it and keep unrelated work intact. If your fork copied only `main`, fetch the preview branch from the upstream repository before creating your own working branch; keep your own fork as the push destination.
 
 ```sh
-git clone --branch feat/attio-two-way https://github.com/fulcradynamics/connectors-webapp.git
+git clone --branch feat/knowledge-source-discovery https://github.com/fulcradynamics/connectors-webapp.git
 cd connectors-webapp
 npm ci
 cp .env.example .env # first setup only
@@ -122,7 +122,7 @@ Garmin is the example for a long-lived personal key exchanged server-side for sh
 
 Garmin explicitly opts into `previewPolicy: 'bounded-sample'`: successful empty pages may yield an approvable, labeled partial sample so sparse dates do not prevent collection. Other adapters retain incomplete-preview gating. Never turn throttling, failed reads or incomplete document assembly into a passing preview; show the sample limits. Daily heart rate uses Garmin’s `ConnectDate.localDate` object field, and the shared date picker’s stored UTC date prefix is the user-selected calendar date, not an instant to shift into yesterday.
 
-For Notion, use the current official internal-connection console and explicit Configuration capabilities → Content access → Edit access → Save steps. Token validation alone does not establish page access. Explain search indexing and Refresh sources, the 50-source connection limit, selected-page collection (including individually selected database entries), and one-way Notion→Fulcra behavior. Keep granular setup/recovery steps in shared metadata so new, replacement and saved views stay consistent.
+For Notion, use the current official internal-connection console and explicit Configuration capabilities → Content access → Edit access → Save steps. Token validation alone does not establish page access. Explain search indexing and Refresh sources, the 50-source connection limit, selected-page collection (including individually selected database entries), and default one-way Notion→Fulcra behavior with explicit optional two-way setup. Keep granular setup/recovery steps in shared metadata so new, replacement and saved views stay consistent.
 
 Notion optionally supports two-way page title/Markdown/archive sync through the native backend. Use explicit two-way setup and creation-parent selection, protected document queue routes and the persisted reconciliation worker; never issue provider writes from imported instructions. Editable files use the strict JSON-valued header documented in the provider guide. Source IDs/parents are bound by the encrypted manifest, not content. Preserve write intents, immutable conflict versions, per-attempt create guards, last-converged hashes and exact latest file readback. Never treat absence/access loss as deletion or retry an uncertain create blindly. Two-way changes require real live tests from both services, including conflicts, archive/restore, response loss/restart and unchanged-cycle no-echo checks.
 

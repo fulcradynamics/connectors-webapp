@@ -480,3 +480,59 @@ it('retains the existing injected Notion two-way dispatch independently of Attio
   expect(s.grants['notion-sync:' + c.id]).toBeTruthy();
   expect(s.grants['attio-sync:' + c.id]).toBeUndefined();
 });
+it('continues ingestion while optional discovery publication awaits visibility', async () => {
+  const s = freshState(
+    '11111111-1111-4111-8111-111111111111',
+    '22222222-2222-4222-8222-222222222222'
+  );
+  const id = '33333333-3333-4333-8333-333333333333';
+  s.grants.fulcra = {
+    status: 'ready',
+    expiresAt: new Date(Date.now() + 3600000).toISOString(),
+    encrypted: {}
+  };
+  s.connections[id] = {
+    id,
+    connector: 'github',
+    account_id: '123',
+    status: 'ready',
+    generation: 1,
+    nextDue: 0,
+    config: {
+      resources: ['example/repo'],
+      intervalSeconds: 60,
+      route: { mode: 'file', folder: '/imports', ownerId: s.ownerId }
+    }
+  };
+  let reads = 0,
+    allocations = 0,
+    transfers = 0;
+  const deps = {
+    crypto,
+    client: {
+      fileState: async () => ({ file: null, versions: [] }),
+      allocateFile: async () => {
+        allocations++;
+        return { file: { id: 'manifest-input' }, url: 'https://upload.invalid/one' };
+      },
+      transferFile: async () => {
+        transfers++;
+      }
+    },
+    provider: async () => ({}),
+    adapters: {
+      github: {
+        readPage: async () => {
+          reads++;
+          return { changes: [], candidateCheckpoint: { cursor: 'progress' } };
+        }
+      }
+    }
+  };
+  for (let n = 0; n < 30; n++) await advanceWorker(s, deps);
+  expect(reads).toBeGreaterThan(0);
+  expect(allocations).toBe(1);
+  expect(transfers).toBe(1);
+  expect(s.knowledgeSources.pending.intent.receipt.inputId).toBe('manifest-input');
+  expect(s.knowledgeSources.pending.intent.phase).toBe('verify');
+});

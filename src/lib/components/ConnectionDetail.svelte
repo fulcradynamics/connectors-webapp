@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { mergeDiscoveredSources } from '$lib/client/source-options.js';
   import { connectorRequest } from '$lib/client/connector-api.js';
   import CredentialLinks from './CredentialLinks.svelte';
   import { onMount, untrack } from 'svelte';
@@ -63,6 +64,12 @@
   let creatingType = $state(false);
   let typeName = $state('');
   let typeDescription = $state('');
+  const sourceChoices = $derived([
+    ...resources,
+    ...selected
+      .filter((id) => !resources.some((resource) => resource.id === id))
+      .map((id) => ({ id, name: id, undiscovered: true }))
+  ]);
   const sourcesReady = $derived(
     selected.length > 0 &&
       selected.length <= sourceLimit &&
@@ -102,10 +109,7 @@
       const result = await api(
         `/api/connections/${connection.id}/resources${cursor ? '?cursor=' + encodeURIComponent(cursor) : ''}`
       );
-      resources = [
-        ...resources,
-        ...result.resources.filter((r: any) => !resources.some((x) => x.id === r.id))
-      ];
+      resources = mergeDiscoveredSources(resources, result.resources, !!cursor);
       cursor = result.nextCursor;
       loaded = true;
     });
@@ -403,12 +407,16 @@
               : `Discover available ${info.sourceLabel}`}</button
           >
           <div class="resources">
-            {#each resources as resource}<label class="choice"
+            {#each sourceChoices as resource}<label class="choice"
                 ><input
                   type="checkbox"
                   checked={selected.includes(resource.id)}
                   onchange={(event) => select(resource.id, event.currentTarget.checked)}
-                /><span>{resource.name}<small>{resource.id}</small></span></label
+                /><span
+                  >{resource.name}<small>{resource.id}</small>{#if resource.undiscovered}<small
+                      >Not in current discovery; uncheck to remove this saved selection.</small
+                    >{/if}</span
+                ></label
               >{/each}
           </div>
           {#if loaded && !resources.length}<p>
@@ -422,7 +430,7 @@
               Select at most {sourceLimit} sources per connection.
             </p>{/if}
           {#if selected.length && !resources.length}<p>
-              {selected.length} sources saved. Rediscover to edit them.
+              Saved selections remain removable. Rediscover to verify access before saving.
             </p>{/if}
           <button class="primary" disabled={busy || !sourcesReady} onclick={() => (step = 1)}
             >Continue to destination</button

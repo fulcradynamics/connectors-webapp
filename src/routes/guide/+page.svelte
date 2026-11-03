@@ -51,7 +51,7 @@
     }
   ];
   const repo =
-    'https://github.com/fulcradynamics/connectors-webapp/blob/dab0be45d35c0e32b9704c8acb5dae7d9a1fa556';
+    'https://github.com/fulcradynamics/connectors-webapp/blob/feat/knowledge-source-discovery';
 </script>
 
 <svelte:head
@@ -95,13 +95,14 @@
           <code>[subdomain].my.fulcra.ai</code>. Sign in as its owner.
         </li>
         <li>
-          <strong>Authorize background access.</strong> Under Background sync, choose
-          <strong>Authorize Fulcra</strong>, finish verification and check enrollment. Browser
+          <strong>Authorize background access.</strong> Choose
+          <strong>Allow automatic sync</strong>, finish verification and check enrollment. Browser
           sign-in and background access are separate.
         </li>
         <li>
-          <strong>Connect a service.</strong> Use a provider guide below to prepare its read
-          credential. Enter it in your instance’s protected form and choose
+          <strong>Connect a service.</strong> Use a provider guide below to prepare its credential
+          with the permissions needed for your chosen sync direction. Enter it in your instance’s
+          protected form and choose
           <strong>Verify and continue →</strong>. Never paste credentials into chat or Git.
         </li>
         <li>
@@ -143,9 +144,10 @@
           </article>{/each}
       </div>
       <p>
-        Notion database rows/comments and GitHub review comments/files are outside these examples.
-        Slack polling alone cannot guarantee old edits/deletions; signed events are needed for those
-        guarantees. Read the provider guides before relying on coverage.
+        Individually selected Notion database-entry pages are supported; database
+        schemas/properties, Notion comments and GitHub review comments/files are outside these
+        examples. Slack polling alone cannot guarantee old edits/deletions; signed events are needed
+        for those guarantees. Read the provider guides before relying on coverage.
       </p>
     </section>
     <section aria-labelledby="build">
@@ -202,10 +204,9 @@ npm run build</code
       <h2 id="contribute">Contribute for review</h2>
       <p>
         Keep your changes on a branch in your fork. Add fixtures and a provider guide, run the
-        checks, and open a pull request to the main project. During the preview target <code
-          >feat/connector-template</code
-        >
-        for implementation-dependent changes; after release target <code>main</code>.
+        checks, and open a pull request to the main project’s <code>main</code> branch for review.
+        The hosted preview is published from <code>feat/knowledge-source-discovery</code>; it does
+        not change the contribution target.
       </p>
       <p>
         Include actual test results, setup steps, supported data, known limits and live checks

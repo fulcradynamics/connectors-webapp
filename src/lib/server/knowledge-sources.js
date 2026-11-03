@@ -242,6 +242,7 @@ export async function advanceKnowledgeSources(state, { crypto, client, now = Dat
       pub.nextDue = now;
       return true;
     }
+    const phase = p.intent.phase;
     const result = await advanceFile(p.intent, client);
     if (result === 'verified') complete(pub, p.document, p.intent.file.id, p.hash, now, hash);
     else if (result === 'changed') {
@@ -250,7 +251,7 @@ export async function advanceKnowledgeSources(state, { crypto, client, now = Dat
       pub.pending = null;
       pub.nextDue = now + 30000;
       pub.error = 'Discovery publication changed; regeneration pending';
-    } else pub.nextDue = now;
+    } else pub.nextDue = phase === 'verify' ? now + 30000 : now;
     return true;
   } catch (cause) {
     if (

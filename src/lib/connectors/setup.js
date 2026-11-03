@@ -124,7 +124,7 @@ const providers = {
     sourceLabel: 'repositories',
     sourceHelp: 'Only the selected owner/repository IDs are collected.',
     output:
-      'Issue and pull-request metadata plus issue comments, as structured v1 records and JSON document files. The selected source and original URL remain in the payload.',
+      'Issue and pull-request metadata plus issue comments, as structured v1 records and Markdown document files. Each new file starts with bounded source metadata; the selected source and original URL remain in the payload.',
     backfillHelp:
       'The date bounds initial updated issues and comments. Subsequent polls use update overlap and independent comment pagination.',
     limitations:

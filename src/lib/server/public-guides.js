@@ -44,6 +44,9 @@ const guideLinks = {
   'docs/agent-guide.md': '/guides/agent.md',
   'agent-guide.md': '/guides/agent.md',
   'user-guide.md': '/guides/user.md',
+  'docs/design.md': '/guides/design.md',
+  'superpowers/specs/2026-11-02-notion-production-hardening.md':
+    'https://github.com/fulcradynamics/connectors-webapp/blob/feat/knowledge-source-discovery/docs/superpowers/specs/2026-11-02-notion-production-hardening.md',
   'knowledge-maintenance.md': '/guides/knowledge-maintenance.md',
   'docs/knowledge-maintenance.md': '/guides/knowledge-maintenance.md',
   'knowledge-sources.md': '/guides/knowledge-sources.md',
@@ -58,10 +61,13 @@ const guideLinks = {
 export const publicGuides = Object.fromEntries(
   Object.entries(guides).map(([name, content]) => [
     name,
-    content.replace(/\]\(([^)]+)\)/g, (match, target) =>
-      Object.hasOwn(guideLinks, target)
-        ? `](${guideLinks[/** @type {keyof typeof guideLinks} */ (target)]})`
-        : match
-    )
+    content.replace(/\]\(([^)]+)\)/g, (match, target) => {
+      const fragmentAt = target.indexOf('#');
+      const path = fragmentAt < 0 ? target : target.slice(0, fragmentAt);
+      const fragment = fragmentAt < 0 ? '' : target.slice(fragmentAt);
+      return Object.hasOwn(guideLinks, path)
+        ? `](${guideLinks[/** @type {keyof typeof guideLinks} */ (path)]}${fragment})`
+        : match;
+    })
   ])
 );

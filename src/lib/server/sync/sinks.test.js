@@ -81,6 +81,7 @@ it('a retry keeps the successful file receipt and retries only the failed record
     sink: 'file',
     path: '/clients/a/object/revision.json',
     inputId: 'uploaded',
+    hash: '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a',
     status: 'pending'
   };
   const result = await deliver(
@@ -194,4 +195,87 @@ it('resumes the same allocated file input after dying before byte transfer', asy
   await deliver(output, { ...route, mode: 'file' }, client, schema, durable);
   expect(allocations).toBe(1);
   expect(transfers).toBe(1);
+});
+it('rejects changed bytes for a retained artifact before reusing or sending its receipt', async () => {
+  const fileRoute = { ...route, mode: 'file' };
+  for (const status of ['verified', 'pending', 'uncertain']) {
+    const retained = {
+      sink: 'file',
+      path: '/clients/a/revision/issue.md',
+      inputId: 'old-input',
+      status,
+      hash: 'cba06b5736faf67e54b07b561eae94395e774c517a7d910a54369e1263ccfbd4',
+      ...(status === 'uncertain'
+        ? { transfer: { url: 'https://storage.example/old-allocation' } }
+        : {})
+    };
+    const original = structuredClone(retained);
+    /** @type {string[]} */
+    const writes = [];
+    const client = {
+      findFileByHash: async () => {
+        writes.push('lookup');
+        return null;
+      },
+      allocateFile: async () => {
+        writes.push('allocate');
+        return { file: { id: 'new-input' }, url: 'https://storage.example/new' };
+      },
+      transferFile: async () => {
+        writes.push('transfer');
+      }
+    };
+    await expect(
+      deliver(
+        {
+          record: {},
+          files: [{ path: 'revision/issue.md', content: 'new', contentType: 'text/markdown' }]
+        },
+        fileRoute,
+        client,
+        {},
+        [retained],
+        async () => {
+          writes.push('persist');
+        }
+      )
+    ).rejects.toThrow(/artifact.*content.*changed/i);
+    expect(writes).toEqual([]);
+    expect(retained).toEqual(original);
+  }
+});
+it('preflights every artifact before any earlier artifact can upload', async () => {
+  /** @type {string[]} */ const effects = [];
+  const output = {
+    record: {},
+    files: [
+      { path: 'revision/a.md', content: 'new first', contentType: 'text/markdown' },
+      { path: 'revision/b.md', content: 'new second', contentType: 'text/markdown' }
+    ]
+  };
+  const retained = {
+    sink: 'file',
+    path: '/clients/a/revision/b.md',
+    inputId: 'old-second',
+    status: 'verified',
+    hash: 'cba06b5736faf67e54b07b561eae94395e774c517a7d910a54369e1263ccfbd4'
+  };
+  await expect(
+    deliver(
+      output,
+      { ...route, mode: 'file' },
+      {
+        uploadFile: async () => {
+          effects.push('upload');
+          return { id: 'new-first' };
+        }
+      },
+      {},
+      [retained],
+      async () => {
+        effects.push('persist');
+      }
+    )
+  ).rejects.toThrow(/artifact.*content.*changed/i);
+  expect(effects).toEqual([]);
 });

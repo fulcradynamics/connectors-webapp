@@ -426,7 +426,7 @@
                       disabled={writeDisabled}
                       onchange={(event) => setOptions(attribute, event.currentTarget)}
                       ><option value="">No value</option
-                      >{#if attribute.type === 'record-reference'}{#each [...new Set( [...approvedResources, ...selectedValues(attribute)] )] as id}<option
+                      >{#if attribute.type === 'record-reference'}{#each [...new Set( [...referenceChoices(attribute), ...selectedValues(attribute)] )] as id}<option
                             value={id}>{id}</option
                           >{/each}{:else}{#each (attribute.options ?? []).filter((option: any) => !option.archived) as option}<option
                             value={option.id}>{option.title}</option
