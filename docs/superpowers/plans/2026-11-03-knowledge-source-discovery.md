@@ -43,14 +43,14 @@ Files: modify `src/lib/server/native/worker.js`, `workflows/native-controller.js
 - [x] Add a failing native test using valid instance/owner identities and the real publication unit: publish without provider/model activity, resume after restart, let normal ingestion proceed after metadata failure.
 - [x] Wire only idle actor phases and include retained producer due time in native scheduling. Preserve active jobs and default no-grant behavior.
 - [x] Verify regular sync suites, unchanged publication versions, disabled-route pointers and default clone behavior without a skill.
-- [ ] Run full test/bootstrap/type/build/privacy/secret checks; commit and publish/read back exact source.
+- [x] Run full test/bootstrap/type/build/privacy/secret checks; commit and publish/read back exact source.
 
 ## Task3 — Composition, live evidence and optional add-on
 
 Peer owns `map-our-team` skill changes/review and its standalone/composed behavioral tests. This session owns producer/deployment and template publication.
 
-- [ ] Read and reconcile peer contract/review/test artifacts against actual producer JSON, including access context and native-only fallback.
+- [x] Read and reconcile peer contract/review/test artifacts against actual producer JSON, including access context and native-only fallback.
 - [ ] Deploy authorized personal/reference sources without copying identities. Verify exact source/READY state, producer manifest/routes, preserved connections and unchanged repeated versions.
-- [ ] Have the peer interpret the actual manifest/index; keep simulated adoption, live reads and actual source/permission checks distinctly labeled.
+- [x] Have the peer interpret the actual manifest/index; keep simulated adoption, live reads and actual source/permission checks distinctly labeled.
 - [ ] Once skill source is published/read back and integration gates pass, add a concise optional skill link to landing/user/agent guides. Explain optional consolidation/dreaming and that installing a skill does not start a schedule.
 - [ ] Recheck source/page/guide bytes, retain private evidence and accepted own V5 fold; preserve normal main-review prerequisites.

@@ -164,12 +164,16 @@
           </p>
           <p class="notice">
             The source is public and MIT licensed. This site previews
-            <a href={`${repo}/pull/4`}>Attio and related changes awaiting review</a> from
-            <code>feat/attio-two-way</code>. Use the command below to reproduce this preview;
+            <a href={`${repo}/pull/5`}
+              >Source discovery, Attio and related changes awaiting review</a
+            >
+            from
+            <code>feat/knowledge-source-discovery</code>. Use the command below to reproduce this
+            preview;
             <code>main</code> remains the reviewed baseline.
           </p>
           <pre aria-label="Clone and run the preview"><code
-              >git clone --branch feat/attio-two-way \
+              >git clone --branch feat/knowledge-source-discovery \
   https://github.com/fulcradynamics/connectors-webapp.git
 cd connectors-webapp
 npm ci
@@ -229,6 +233,55 @@ node scripts/deploy.mjs</code
             disconnect. Nothing starts collecting just because you cloned the app.
           </p>
           <a class="text-link" href="/app">Open this instance’s workspace ↗</a>
+        </article>
+      </div>
+    </section>
+
+    <section id="knowledge" class="build">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">Optional add-on</p>
+          <h2>Turn connected sources into company knowledge.</h2>
+        </div>
+      </div>
+      <p class="guide-entry">
+        The Company Knowledge Skill helps your agent find the right source, understand who maintains
+        it, and check gaps or stale information. It works with accounts already connected to Fulcra,
+        and can also discover this app’s folders and verified indexes. Each works on its own;
+        together they use associated source pointers.
+      </p>
+      <div class="build-grid">
+        <article>
+          <h3>Add the knowledge skill</h3>
+          <p>
+            Install <a
+              href="https://github.com/ashfulcra/fulcra-tools/tree/main/skills/map-our-team"
+              >map-our-team from Fulcra Tools</a
+            > in your agent, then ask it to map your authorized company sources.
+          </p>
+          <pre aria-label="Install the optional Company Knowledge Skill"><code
+              >npx skills add ashfulcra/fulcra-tools --skill map-our-team</code
+            ></pre>
+          <p>
+            It adopts verified source pointers into a steward-owned team map. You can use it without
+            deploying this connector app; no duplicate import or new access grant is implied.
+          </p>
+          <a class="text-link" href="/guides/knowledge-sources.md"
+            >How storage and source discovery work ↗</a
+          >
+        </article>
+        <article>
+          <h3>Automatic sync, optional reasoning</h3>
+          <p>
+            Connectors keep collecting and updating their navigation indexes without an agent. The
+            skill adds source-aware research and synthesis; it does not edit connector state or
+            write summaries back into two-way working documents.
+          </p>
+          <p>
+            Consolidating useful knowledge is sometimes called “dreaming.” This skill does not
+            install a background model worker or start a schedule. Recurring maintenance and
+            persistent knowledge outputs need their own explicit setup.
+          </p>
         </article>
       </div>
     </section>

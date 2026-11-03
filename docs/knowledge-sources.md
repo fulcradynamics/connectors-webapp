@@ -31,3 +31,15 @@ A map steward can adopt these pointers alongside accounts already connected thro
 The connector owns manifests, navigation indexes, working documents and operational state. A steward owns `/team-map/` pointers and role knowledge. Optional persistent synthesis belongs in an explicitly authorized knowledge destination or an owned section of an existing `/vault/`. It must stay outside two-way working files, where an edit could become a provider change. Neither component rewrites the other's state.
 
 Provider permissions and Fulcra copied-file permissions are separate. Offboarding must check each copied route and grant, not just revoke provider access. Installing a skill does not start a consolidation schedule or background model worker. Agent-assisted consolidation may be called “dreaming”; deterministic sync and index maintenance continue independently.
+
+## Install the optional Company Knowledge Skill
+
+The published [Company Knowledge Skill (`map-our-team`)](https://github.com/ashfulcra/fulcra-tools/tree/main/skills/map-our-team) can be installed in your agent:
+
+```sh
+npx skills add ashfulcra/fulcra-tools --skill map-our-team
+```
+
+Ask it to map the company sources you already authorized. It works with platform-connected accounts without this app, and can adopt this app's verified discovery pointers when available. The skill supplies role/access research and source-cited answers; it does not import the same data again or grant access from a link. See its [source-discovery contract](https://github.com/ashfulcra/fulcra-tools/blob/main/skills/map-our-team/references/source-discovery.md) and [gap recovery guidance](https://github.com/ashfulcra/fulcra-tools/blob/main/skills/map-our-team/references/resolve-gaps.md).
+
+Choose persistent output ownership and any maintenance schedule explicitly with your agent. Installing this skill starts no recurring synthesis service.
