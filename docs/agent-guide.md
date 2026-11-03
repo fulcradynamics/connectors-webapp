@@ -9,10 +9,10 @@ These are project instructions for a coding agent working at its user's request.
 
 ## Get the source and run the real examples
 
-Repository: https://github.com/fulcradynamics/connectors-webapp. Fork it and branch from `main`; inspect an existing checkout before changing it. Keep unrelated work intact.
+Repository: https://github.com/fulcradynamics/connectors-webapp. The hosted reference currently previews [PR #4](https://github.com/fulcradynamics/connectors-webapp/pull/4) on `feat/attio-two-way`, including Attio and related unmerged Notion/runtime work. Attio is not yet on `main`. Use this published preview branch to reproduce the hosted examples; `main` remains the reviewed baseline and the target for contributions. Inspect an existing checkout before changing it and keep unrelated work intact. If your fork copied only `main`, fetch the preview branch from the upstream repository before creating your own working branch; keep your own fork as the push destination.
 
 ```sh
-git clone https://github.com/fulcradynamics/connectors-webapp.git
+git clone --branch feat/attio-two-way https://github.com/fulcradynamics/connectors-webapp.git
 cd connectors-webapp
 npm ci
 cp .env.example .env # first setup only

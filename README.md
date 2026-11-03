@@ -26,8 +26,10 @@ These are working example adapters with synthetic tests, not promises to mirror 
 
 Use Node.js 24 and the [Fulcra CLI](https://pypi.org/project/fulcra-api/).
 
+The hosted template currently previews [PR #4](https://github.com/fulcradynamics/connectors-webapp/pull/4) on `feat/attio-two-way`, including Attio and related unmerged Notion/runtime changes. Attio is not yet on `main`; `main` remains the reviewed baseline. The command below reproduces the hosted preview. Fork the repository or set your own fork as the push destination to keep and contribute your changes. A fork containing only `main` must fetch this preview branch from upstream first.
+
 ```sh
-git clone https://github.com/YOUR-ACCOUNT/connectors-webapp.git
+git clone --branch feat/attio-two-way https://github.com/fulcradynamics/connectors-webapp.git
 cd connectors-webapp
 npm ci
 fulcra-api auth login

@@ -164,10 +164,13 @@
             them back. Or clone it for a local checkout.
           </p>
           <p class="notice">
-            The source is public and MIT licensed. Fork it, then work from <code>main</code>.
+            The source is public and MIT licensed. This site previews
+            <a href={`${repo}/pull/4`}>Attio and related changes awaiting review</a> from
+            <code>feat/attio-two-way</code>. Use the command below to reproduce this preview;
+            <code>main</code> remains the reviewed baseline.
           </p>
           <pre aria-label="Clone and run the preview"><code
-              >git clone --branch main \
+              >git clone --branch feat/attio-two-way \
   https://github.com/fulcradynamics/connectors-webapp.git
 cd connectors-webapp
 npm ci
