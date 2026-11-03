@@ -278,10 +278,13 @@ node scripts/deploy.mjs</code
             write summaries back into two-way working documents.
           </p>
           <p>
-            Consolidating useful knowledge is sometimes called “dreaming.” This skill does not
-            install a background model worker or start a schedule. Recurring maintenance and
-            persistent knowledge outputs need their own explicit setup.
+            Consolidating useful knowledge is sometimes called “dreaming.” Use a scheduled task in
+            Codex or Claude with the knowledge skill. Each installer chooses the sources, output,
+            one writer and cadence; installing the skill starts no schedule.
           </p>
+          <a class="text-link" href="/guides/knowledge-maintenance.md"
+            >Set up scheduled knowledge maintenance ↗</a
+          >
         </article>
       </div>
     </section>

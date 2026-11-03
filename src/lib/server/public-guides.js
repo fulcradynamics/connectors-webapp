@@ -1,3 +1,4 @@
+import maintenance from '../../../docs/knowledge-maintenance.md?raw';
 import knowledge from '../../../docs/knowledge-sources.md?raw';
 import security from '../../../SECURITY.md?raw';
 import design from '../../../docs/design.md?raw';
@@ -18,6 +19,7 @@ import slack from '../../../docs/providers/slack.md?raw';
 // Deliberate public document allowlist. Never derive a filesystem path from a URL.
 /** @type {Record<string,string>} */
 const guides = {
+  'knowledge-maintenance.md': maintenance,
   'knowledge-sources.md': knowledge,
   'security.md': security,
   'design.md': design,
@@ -42,6 +44,8 @@ const guideLinks = {
   'docs/agent-guide.md': '/guides/agent.md',
   'agent-guide.md': '/guides/agent.md',
   'user-guide.md': '/guides/user.md',
+  'knowledge-maintenance.md': '/guides/knowledge-maintenance.md',
+  'docs/knowledge-maintenance.md': '/guides/knowledge-maintenance.md',
   'knowledge-sources.md': '/guides/knowledge-sources.md',
   'docs/knowledge-sources.md': '/guides/knowledge-sources.md',
   'SECURITY.md': '/guides/security.md',

@@ -70,3 +70,5 @@ npm run build
 `npm run test:examples` runs only the seven adapters. Tests use synthetic data; they do not require provider credentials. Browser checks and the optional PostgreSQL test path are documented in [contributing](CONTRIBUTING.md).
 
 MIT licensed. Based on the [Fulcra Svelte app starter](https://github.com/fulcradynamics/app-template-svelte) and [Fulcra app-building skill](https://github.com/fulcradynamics/agent-skills).
+
+Use the optional [scheduled knowledge-maintenance recipe](docs/knowledge-maintenance.md) to run the skill in Codex or Claude. It is a per-installation setup pattern; it creates no personal automation or model service.

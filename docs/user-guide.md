@@ -67,3 +67,5 @@ The typed editor preserves zero, false, explicit clearing and multiselect remova
 The native worker maintains a metadata-only manifest under `/knowledge-sources/v1/fulcra-connectors/<instance-UUID>.json`. It links your chosen folders/v1 types and verified Notion/Attio indexes. Collection and indexing keep running without an agent or knowledge skill. Readers still need access to the referenced content. See [discovery, updates and knowledge ownership](knowledge-sources.md).
 
 For optional agent-assisted company mapping and gap research, install the [Company Knowledge Skill](https://github.com/ashfulcra/fulcra-tools/tree/main/skills/map-our-team). It also works using platform-connected accounts without this app. [Installation and ownership](knowledge-sources.md#install-the-optional-company-knowledge-skill) explain how both work together; installation starts no recurring model worker.
+
+To make knowledge upkeep recurring, follow [Schedule company knowledge maintenance](knowledge-maintenance.md). Run a manual proposal first, then configure one native Codex/Claude task with your own map, sources and cadence. Collection remains independent.

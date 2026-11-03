@@ -43,3 +43,5 @@ npx skills add ashfulcra/fulcra-tools --skill map-our-team
 Ask it to map the company sources you already authorized. It works with platform-connected accounts without this app, and can adopt this app's verified discovery pointers when available. The skill supplies role/access research and source-cited answers; it does not import the same data again or grant access from a link. See its [source-discovery contract](https://github.com/ashfulcra/fulcra-tools/blob/main/skills/map-our-team/references/source-discovery.md) and [gap recovery guidance](https://github.com/ashfulcra/fulcra-tools/blob/main/skills/map-our-team/references/resolve-gaps.md).
 
 Choose persistent output ownership and any maintenance schedule explicitly with your agent. Installing this skill starts no recurring synthesis service.
+
+For optional recurring consolidation, use the [scheduled knowledge-maintenance setup](knowledge-maintenance.md). It links the skill’s canonical run prompt with native Codex/Claude scheduling, per-installation configuration and actual-run verification.
