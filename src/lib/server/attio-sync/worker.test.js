@@ -172,6 +172,18 @@ it('pushes only changed fields and merges a disjoint remote change', async () =>
   expect(decodeDocument(current.content).values).toEqual({ [field]: ['B'], [secondField]: ['Y'] });
 });
 
+it('reports verified sync and delivery only after the current working copy commits', async () => {
+  const f = fixture();
+  await f.until(async () => (await f.manifest()).pending?.phase === 'commit');
+  expect(f.c.lastVerified).toBeUndefined();
+  expect(f.c.lastDelivery).toBeUndefined();
+  await f.step();
+  expect((await f.entry()).status).toBe('synced');
+  expect(f.c.lastVerified).toEqual(expect.any(String));
+  expect(Number.isFinite(Date.parse(f.c.lastVerified))).toBe(true);
+  expect(f.c.lastDelivery).toBe(f.c.lastVerified);
+});
+
 it('retains same-field conflict evidence and never writes an unreviewed winner', async () => {
   const f = fixture();
   await f.until(async () => (await f.entry())?.status === 'synced');

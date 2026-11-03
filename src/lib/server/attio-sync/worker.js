@@ -1042,6 +1042,8 @@ export async function advanceAttioSync(state, c, { crypto, client, provider, api
       e.title = p.document.title;
       e.sourceUrl = p.document.url;
       e.status = 'synced';
+      c.lastVerified = new Date().toISOString();
+      c.lastDelivery = c.lastVerified;
       if (e.kind === 'note') {
         e.sourceHash = p.sourceHash;
         e.headNoteId = p.document.headNoteId;
