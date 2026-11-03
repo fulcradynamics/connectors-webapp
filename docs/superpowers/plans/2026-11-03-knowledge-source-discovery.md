@@ -1,6 +1,6 @@
 # Knowledge source discovery implementation plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Make deterministic connector outputs discoverable by the independently usable Company Knowledge Skill, verify composition, then publish its optional add-on entry.
 
@@ -31,18 +31,18 @@ Files: create `src/lib/server/knowledge-sources.js` and `knowledge-sources.test.
 
 Interfaces: `knowledgeSourcesPath(state)`, `knowledgeSourcesView(state, crypto)`, `advanceKnowledgeSources(state, {crypto, client, now})`. The view is strict connection-level metadata; advance returns whether it consumed this worker phase and retains its operation under `state.knowledgeSources`.
 
-- [ ] Write failing tests for observed identity/routes, unknown/disabled/current status, bounded strict content, distinct instances, stable publication, readback/restart and foreign-file protection.
-- [ ] Run the focused file and confirm missing feature failures.
-- [ ] Implement pure rendering plus one retained remote phase per call; back off on failure and avoid clock churn.
-- [ ] Run focused tests and commit the contract unit.
+- [x] Write failing tests for observed identity/routes, unknown/disabled/current status, bounded strict content, distinct instances, stable publication, readback/restart and foreign-file protection.
+- [x] Run the focused file and confirm missing feature failures.
+- [x] Implement pure rendering plus one retained remote phase per call; back off on failure and avoid clock churn.
+- [x] Run focused tests and commit the contract unit.
 
 ## Task2 — Native scheduling and standalone operation
 
 Files: modify `src/lib/server/native/worker.js`, `workflows/native-controller.js`; extend native worker/scheduling tests as needed; update README, agent/user and storage guides.
 
-- [ ] Add a failing native test using valid instance/owner identities and the real publication unit: publish without provider/model activity, resume after restart, let normal ingestion proceed after metadata failure.
-- [ ] Wire only idle actor phases and include retained producer due time in native scheduling. Preserve active jobs and default no-grant behavior.
-- [ ] Verify regular sync suites, unchanged publication versions, disabled-route pointers and default clone behavior without a skill.
+- [x] Add a failing native test using valid instance/owner identities and the real publication unit: publish without provider/model activity, resume after restart, let normal ingestion proceed after metadata failure.
+- [x] Wire only idle actor phases and include retained producer due time in native scheduling. Preserve active jobs and default no-grant behavior.
+- [x] Verify regular sync suites, unchanged publication versions, disabled-route pointers and default clone behavior without a skill.
 - [ ] Run full test/bootstrap/type/build/privacy/secret checks; commit and publish/read back exact source.
 
 ## Task3 — Composition, live evidence and optional add-on

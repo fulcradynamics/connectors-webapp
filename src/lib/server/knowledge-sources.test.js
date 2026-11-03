@@ -156,7 +156,7 @@ it('represents generic file/v1 routes without inventing an index or freshness cl
     mode: 'read-only',
     files_path: '/imports',
     record_type: c.config.route.recordType,
-    status: 'ready'
+    status: 'pending'
   });
   expect(source.index_path).toBeUndefined();
   expect(source.last_verified_at).toBeUndefined();
@@ -322,4 +322,52 @@ it('does not consume an active sync or authorize discovery without a Fulcra gran
   await advanceWorker(state, { crypto, client });
   expect(state.knowledgeSources).toBeUndefined();
   expect(client.allocationCount).toBe(0);
+});
+
+it('reconciles a rejected upload capability before replacing it and retains its receipt', async () => {
+  const { state } = fixture(),
+    client = new Files();
+  const transfer = client.transferFile.bind(client);
+  /** @type {string|undefined} */ let expiredUrl;
+  client.transferFile = async (upload, content) => {
+    expiredUrl ??= upload.url;
+    if (upload.url === expiredUrl) throw Error('File transfer returned 403');
+    return transfer(upload, content);
+  };
+  for (let n = 0; n < 5; n++) await advanceKnowledgeSources(state, { crypto, client, now: at + n });
+  const expired = state.knowledgeSources.pending.intent.receipt;
+  await publish(state, client, at + 60000);
+  expect(state.knowledgeSources.fileId).toBeTruthy();
+  expect(client.allocationCount).toBe(2);
+  expect(client.transfers).toBe(1);
+  expect(
+    state.knowledgeSources.previous.some(
+      (/** @type {any} */ p) => p.receipt.inputId === expired.inputId
+    )
+  ).toBe(true);
+});
+it('verifies a published upload despite a rejection response without allocating a duplicate', async () => {
+  const { state } = fixture(),
+    client = new Files();
+  const transfer = client.transferFile.bind(client);
+  let reject = true;
+  client.transferFile = async (upload, content) => {
+    await transfer(upload, content);
+    if (reject) {
+      reject = false;
+      throw Error('File transfer returned 403');
+    }
+  };
+  for (let n = 0; n < 5; n++) await advanceKnowledgeSources(state, { crypto, client, now: at + n });
+  await publish(state, client, at + 60000);
+  expect(client.allocationCount).toBe(1);
+  expect(client.transfers).toBe(1);
+});
+it('never treats an empty generic sync or stale preconfiguration timestamp as verified output', () => {
+  const { state, c } = fixture('github');
+  c.lastVerified = new Date(at).toISOString();
+  c.config.twoWay = null;
+  c.config.attio = null;
+  c.config.route.folder = '/new-unverified';
+  expect(knowledgeSourcesView(state, crypto).sources[0].status).toBe('pending');
 });

@@ -150,7 +150,7 @@ export function knowledgeSourcesView(state, crypto) {
               ? 'ready'
               : 'pending';
         }
-      } else if (!twoWay && c.lastVerified) source.status = 'ready';
+      } // Generic routes have no scope-bound output revision; a completed empty poll is not proof.
       const retained = state.knowledgeSources?.pointers?.[c.id];
       if (
         !source.index_revision &&
@@ -227,32 +227,56 @@ export async function advanceKnowledgeSources(state, { crypto, client, now = Dat
       return true;
     }
     const p = pub.pending;
-    const current = (await client.fileState(target, { maxBytes: limit })).file;
+    const remote = await client.fileState(target, { maxBytes: limit }),
+      current = remote.file;
     if (current) owned(current.content, state);
+    if (
+      p.transferRejected &&
+      !remote.versions.some((/** @type {any} */ v) => v.id === p.intent.receipt?.inputId)
+    ) {
+      // A definitive capability rejection is not proof of absence. Replace only after a fresh
+      // published-history read excludes the old allocation; unknown outcomes keep their receipt.
+      retainAttempt(pub, p);
+      p.intent = fileIntent(target, p.intent.content, current, limit);
+      delete p.transferRejected;
+      pub.nextDue = now;
+      return true;
+    }
     const result = await advanceFile(p.intent, client);
     if (result === 'verified') complete(pub, p.document, p.intent.file.id, p.hash, now, hash);
     else if (result === 'changed') {
       // Only metadata owned by this producer can be regenerated; provider data is untouched.
-      pub.previous = [
-        ...(pub.previous ?? []),
-        {
-          path: p.intent.path,
-          revision: contentHash(p.intent.content),
-          receipt: p.intent.receipt,
-          history: p.intent.history,
-          interveningFileIds: p.intent.interveningFileIds ?? []
-        }
-      ].slice(-4);
+      retainAttempt(pub, p);
       pub.pending = null;
       pub.nextDue = now + 30000;
       pub.error = 'Discovery publication changed; regeneration pending';
     } else pub.nextDue = now;
     return true;
-  } catch {
+  } catch (cause) {
+    if (
+      pub.pending?.intent?.phase === 'transfer' &&
+      cause instanceof Error &&
+      /^File transfer returned (400|401|403|404|410)$/.test(cause.message)
+    )
+      pub.pending.transferRejected = true;
     pub.error = 'Discovery publication unverified; ingestion continues';
     pub.nextDue = now + 30000;
     return false;
   }
+}
+/** @param {any} pub @param {any} p */
+function retainAttempt(pub, p) {
+  pub.previous = [
+    ...(pub.previous ?? []),
+    {
+      path: p.intent.path,
+      revision: contentHash(p.intent.content),
+      receipt: p.intent.receipt,
+      history: p.intent.history,
+      interveningFileIds: p.intent.interveningFileIds ?? [],
+      transferRejected: !!p.transferRejected
+    }
+  ].slice(-4);
 }
 /** @param {any} pub @param {any} document @param {string} id @param {string} hash @param {number} now @param {string} latestHash */
 function complete(pub, document, id, hash, now, latestHash) {
