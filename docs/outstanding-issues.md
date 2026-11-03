@@ -6,4 +6,4 @@
 - Owner destinations are supported. Team/shared writes need independently verified permissions.
 - Rate limits, large source trees, provider deletions and unsupported data remain documented limits.
 
-Track reusable bugs and connector proposals in [GitHub issues](https://github.com/ashfulcra/connectors-webapp/issues). Keep account-specific prerequisites and private work logs in the owner's workspace.
+Track reusable bugs and connector proposals in [GitHub issues](https://github.com/fulcradynamics/connectors-webapp/issues). Keep account-specific prerequisites and private work logs in the owner's workspace.

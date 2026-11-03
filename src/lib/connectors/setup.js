@@ -1,6 +1,63 @@
-/** @typedef {{name:string,credentialUrl:string|null,credentialLink:string,credentialNote?:string,additionalCredentialLinks?:Array<{url:string,label:string}>,setupUrl:string,setupLink:string,credentialSteps:string[],scopes:string,sourceLabel:string,sourceHelp:string,output:string,backfillHelp:string,limitations:string,accountHint?:string}} ConnectorSetup */
+export const MAX_SELECTED_SOURCES = 50;
+/** @param {string} connector */
+export function getSourceLimit(connector) {
+  return connector === 'attio' ? 1000 : MAX_SELECTED_SOURCES;
+}
+/** @typedef {{name:string,credentialUrl:string|null,credentialLink:string,credentialNote?:string,additionalCredentialLinks?:Array<{url:string,label:string}>,setupUrl:string,setupLink:string,credentialSteps:string[],scopes:string,sourceLabel:string,sourceHelp:string,sourceTroubleshooting?:string,output:string,backfillHelp:string,limitations:string,accountHint?:string}} ConnectorSetup */
 /** @type {Record<string,ConnectorSetup>} */
 const providers = {
+  attio: {
+    name: 'Attio',
+    credentialUrl: null,
+    credentialLink: 'Create or manage an Attio access token',
+    credentialNote:
+      'Create tokens inside your workspace: Workspace settings → Developers. There is no universal token-creation URL.',
+    setupUrl: 'https://attio.com/help/reference/apps/generating-an-api-key',
+    setupLink: 'Attio API key creation and management help',
+    credentialSteps: [
+      'As a workspace admin, open the dropdown beside your Attio workspace name → Workspace settings → Developers → Create access token (or New access token when a token already exists).',
+      'Enter a token Name. Set Records to Read (one-way) or Read-write (two-way), Object Configuration to Read, and Notes to Read (import) or Read-write (linked revisions) only when including notes. Leave other permissions Disabled, review, then click Save.',
+      'After Save, find the new token row and use Show access token if it is masked. Copy its value and paste it only into the protected Attio workspace access token field here. Never put the token in chat, documents or source. Verification binds this connection to its workspace and does not enable collection.',
+      'To change scopes or revoke access later, return to Workspace settings → Developers → the token’s three-dot menu → Edit or Delete. Tokens are available on all plans and require an admin to manage.',
+      'Select exact People or Companies records next. For optional two-way sync, explicitly approve writable fields for each object and optionally include linked note revisions. Review Destination, Schedule and preview before enabling.'
+    ],
+    scopes:
+      'One-way record import: object_configuration:read and record_permission:read. Two-way selected fields also need record_permission:read-write. Optional notes need note:read for import or note:read-write for linked revisions. Do not grant schema, list, user, task or workspace write scopes.',
+    sourceLabel: 'People / Companies records',
+    sourceHelp:
+      'Select exact existing People or Companies records, up to 1,000 per connection. Selecting one record does not select its object or future records. Writable attribute choices apply per object only to these selected records.',
+    sourceTroubleshooting:
+      'A verified token can still lack object/record read scopes or access to People or Companies. Check the same workspace’s Developers token Scopes, then Refresh sources. An empty picker does not enable all records.',
+    output:
+      'Current typed record snapshots, with optional selected-field two-way edits and linked note revisions. Notes are an API text projection, not an image or file backup. Choose a Fulcra folder and, optionally, compatible v1 Event records.',
+    backfillHelp:
+      'Current record fields are complete snapshots and are not filtered by this date. Optional notes use the selected initial history date; the proposed note window is 30 days. Deeper note history is an explicit choice.',
+    limitations:
+      'The original rich note is preserved in Attio; editing a note publishes a new linked text revision on the same selected record. No new CRM records, schema, lists, deletes or image downloads. Two-way mode needs files or files + v1 records. Up to 32 writable attributes per object, 1,000 mapped note lineages and 5 queued edits; oversized or inaccessible items remain visible for review.'
+  },
+  garmin: {
+    name: 'Garmin',
+    credentialUrl: 'https://connect.garmin.com/app/settings/personalApiToken',
+    credentialLink: 'Create or manage Garmin Personal API key',
+    setupUrl: 'https://developer.garmin.com/gc-developer-program/personal/personal-api/',
+    setupLink: 'Garmin Personal API setup instructions',
+    credentialSteps: [
+      'Open Garmin Connect Personal API keys below while signed into your own Garmin account. Select Create Key, read and accept the terms, choose an expiration, then Create.',
+      'Copy the once-displayed key and paste it here. Choose Done in Garmin. This app exchanges it for a short-lived access token and renews that token automatically. It never needs your Garmin password.',
+      'Keys expire after 30, 90 or 180 days, or one year. Check the expiry on the same Garmin page. Replace the key here when it expires or you revoke it; replacement pauses collection until you preview and enable again.'
+    ],
+    scopes:
+      'Personal API access to your own Garmin account only. The key grants account-level read access; select the datasets this app should import next. Verification reads account settings and today’s daily summary to bind your account identity.',
+    sourceLabel: 'datasets',
+    sourceHelp:
+      'Choose Activities, Daily summaries, Sleep, Heart rate and/or HRV. These are categories within one Garmin account. Availability depends on your devices and uploaded data.',
+    output:
+      'Garmin JSON: activity summaries, daily wellness summaries, sleep, daily heart-rate readings and HRV. Choose JSON files, connector-compatible v1 Event records, or both. Raw provider values/units, calendar date and time zone are retained in payload; this does not map into existing Fulcra health metric types.',
+    backfillHelp:
+      'The starting date is interpreted in the verified Garmin account time zone. Import recent days first, then older days. Each cycle rechecks the latest 7 calendar days; a daily reconciliation checks the selected history, bounded to the latest year. A cycle can require many requests, so the interval is not a freshness guarantee.',
+    limitations:
+      'Personal, pull-only use. No FIT/ZIP exports, GPS tracks, workouts or women’s health data in this version. Activities include parent summaries, not separate multisport legs. Empty days do not delete old imports. Garmin must receive device uploads first. No numeric API quota is published in the inspected docs; throttling delays collection. The token renews within 24 hours, but an expired/revoked key needs replacement.'
+  },
   granola: {
     name: 'Granola',
     credentialUrl: null,
@@ -75,24 +132,31 @@ const providers = {
   },
   notion: {
     name: 'Notion',
-    credentialUrl: 'https://www.notion.so/profile/integrations',
+    credentialUrl: 'https://app.notion.com/developers/connections',
     credentialLink: 'Open Notion connection console',
-    setupUrl: 'https://www.notion.com/help/create-integrations-with-the-notion-api',
+    setupUrl: 'https://developers.notion.com/guides/get-started/internal-connections',
     setupLink: 'Notion connection setup instructions',
     credentialSteps: [
-      'Open the Notion connection console below. Create a new internal connection for your workspace, enable Read content and copy its token from Configuration. A workspace owner must create the connection.',
-      'In Notion, explicitly connect that integration to each root page you want to import. Paste the token below; a token alone does not grant all page access.'
+      'Open the Notion connection console below. In Build → Internal connections, choose Create a new connection, name it and select the workspace to import. You must be a workspace owner. If you already created one, open it instead.',
+      'In Configuration → Capabilities, enable Read content. For one-way import, keep Update content and Insert content off. For optional two-way sync, also enable Update content and Insert content. Keep comment and agent access off and choose No user information.',
+      'Open Content access → Edit access. Select the pages or databases to share, then Save. Sharing a parent grants access to its children. A new connection has no page access, even when its token verifies.',
+      'Alternatively, open a page in Notion → ••• → Connections → Add connection, select your internal connection and confirm the page/child access.',
+      'Return to Configuration and copy the API token. Paste it only in the protected Internal connection API token field below, name this connection, then Verify and continue. Never paste the token in chat or a page.',
+      'In Sources, discover and select pages. For two-way sync, explicitly enable its checkbox and choose a selected creation parent; it creates editable Fulcra working files and can write changes back to Notion. If discovery is empty, allow search indexing, then Refresh sources. Review Destination, Schedule and preview before enabling.'
     ],
-    scopes: 'Read content on explicitly shared pages; no source write capability is needed.',
+    scopes:
+      'Read content on shared pages and children for one-way import. Optional two-way sync also requires Update content and Insert content on selected pages and the creation parent. Comment, user-information and agent access are not needed.',
     sourceLabel: 'root pages',
     sourceHelp:
-      'Select a small root page. Its accessible nested blocks are traversed; shared-page search only fills this picker.',
+      'Select page documents to import, including individual database entries returned by search. Each selected page includes its accessible nested blocks. Sharing a database does not automatically select its rows or future entries.',
+    sourceTroubleshooting:
+      'Token verification checks the connection identity, not page access. In the Notion connection console, open Content access → Edit access → select pages or databases → Save. Confirm the workspace and connection match this token. Allow search indexing to catch up, then Refresh sources here. Shared parents include their children, but you must select the page documents to import.',
     output:
-      'Complete page/block documents as Markdown files and v1 records with normalized page content. Unsupported blocks are marked; external files remain links.',
+      'Default one-way Notion → Fulcra; optional two-way page title/Markdown/archive sync uses editable working copies. One-way imports complete page/block documents as Markdown files and v1 records with normalized page content. Unsupported blocks are marked; external files remain links.',
     backfillHelp:
       'Notion imports the complete selected root and nested blocks; this is not a date filter. Roots are rescanned to find changes in older nested content.',
     limitations:
-      'Database/data-source rows and comments are not expanded. Each root is bounded to 5,000 blocks and 2 MB of traversal state; choose smaller roots when needed.'
+      'Database/data-source rows are not automatically expanded or added later; select individual page entries from discovery. Comments are not imported. One-way mode never writes back; optional two-way mode syncs page title, Markdown and recoverable archive/restore. Other database properties and comments are not mirrored. Each root is bounded to 5,000 blocks and 2 MB of traversal state; choose smaller roots when needed.'
   },
   slack: {
     name: 'Slack',
@@ -131,7 +195,9 @@ export function setupDefaults(connector, config = {}, now = Date.now()) {
     folder: config.route?.folder ?? `/connectors/${connector}`,
     recordType: config.route?.recordType ?? '',
     intervalSeconds: config.intervalSeconds ?? 300,
-    backfillSince: config.backfillSince ?? new Date(now - 7 * 86400000).toISOString()
+    backfillSince:
+      config.backfillSince ??
+      new Date(now - (connector === 'attio' ? 30 : 7) * 86400000).toISOString()
   };
 }
 /** @param {number} seconds */

@@ -1,6 +1,13 @@
 <script>
   const providers = [
     {
+      id: 'attio',
+      name: 'Attio',
+      prepare: 'Admin-created workspace token with selected record/optional note scopes',
+      select: 'Exact People/Companies records → approved fields and optional linked notes',
+      pattern: 'Typed two-way edits, preserved rich notes and sharded indexes'
+    },
+    {
       id: 'granola',
       name: 'Granola',
       prepare: 'API key from an eligible account + stable source account ID',
@@ -34,15 +41,23 @@
       prepare: 'Channel read token; suitable user token for threads; optional signing secret',
       select: 'Channels → messages and threads',
       pattern: 'Timestamp identity, rate limits and event-assisted updates'
+    },
+    {
+      id: 'garmin',
+      name: 'Garmin',
+      prepare: 'A Garmin Personal API key for your own account',
+      select: 'Datasets → activities, daily summaries, sleep, heart rate and HRV',
+      pattern: 'Short-lived tokens, calendar dates and historical reconciliation'
     }
   ];
-  const repo = 'https://github.com/ashfulcra/connectors-webapp/blob/feat/connector-template';
+  const repo =
+    'https://github.com/fulcradynamics/connectors-webapp/blob/dab0be45d35c0e32b9704c8acb5dae7d9a1fa556';
 </script>
 
 <svelte:head
   ><title>User and agent guides — Fulcra Connectors</title><meta
     name="description"
-    content="Use the five implemented connector examples, hand an agent the build instructions, and contribute another connector for review."
+    content="Use the seven implemented connector examples, hand an agent the build instructions, and contribute another connector for review."
   /></svelte:head
 >
 <div class="guide-page">
@@ -51,7 +66,7 @@
     <p class="eyebrow">Use it. Extend it. Share it.</p>
     <h1>User guide</h1>
     <p class="lead">
-      Five implemented examples bring selected data into your Fulcra folders, v1 data types, or
+      Seven implemented examples bring selected data into your Fulcra folders, v1 data types, or
       both. Each one includes an adapter, source discovery, preview support and runnable tests.
     </p>
     <div class="guide-actions">
@@ -60,15 +75,14 @@
       ><a href="/guides/adding-a-connector.md">Adapter contract ↗</a>
     </div>
     <aside>
-      <strong>Developer preview</strong>
+      <strong>Set up your instance</strong>
       <p>
-        Provider fixtures pass; live account verification is pending. The deployment script
-        initializes native backing and scheduling without a separate database account. If your
-        workspace says “Setup required,” follow the <a href="/guides/setup.md"
+        The deployment script initializes native backing and scheduling without a separate database
+        account. If your workspace says “Setup required,” follow the <a href="/guides/setup.md"
           >current setup guide</a
         >. Use the copyable commands in that guide to create or reuse your namespace, initialize
-        fresh private state, and deploy at your own subdomain. Repository access is currently
-        required to clone the source.
+        fresh private state, and deploy at your own subdomain. The repository is public; anyone can
+        fork it and propose a connector.
       </p>
     </aside>
     <section aria-labelledby="use">
@@ -110,10 +124,10 @@
       </ol>
     </section>
     <section aria-labelledby="examples">
-      <h2 id="examples">The five implemented connectors</h2>
+      <h2 id="examples">The implemented connectors</h2>
       <p>
-        Each setup guide explains exact supported data and limits. Code and test links require
-        current repository access.
+        Each setup guide explains exact supported data and limits. Code and test links require the
+        public repository.
       </p>
       <div class="provider-grid">
         {#each providers as provider}<article>
@@ -169,7 +183,7 @@ npm run build</code
         ></pre>
       <p>
         Use Node 24+. Example tests run the real adapters against synthetic responses without
-        accounts or a database. They do not establish a verified live integration.
+        accounts or a database.
       </p>
     </section>
     <section aria-labelledby="deploy">

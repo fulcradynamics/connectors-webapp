@@ -11,6 +11,8 @@
   let adding = $state('');
   let message = $state('');
   let busy = $state(false);
+  let refreshing = $state(false);
+  let refreshFailed = $state(false);
   let enrollment = $state<any>(null);
   async function api(path: string, body?: any) {
     const result = await connectorRequest(
@@ -25,13 +27,21 @@
     return result;
   }
   async function refresh() {
+    if (refreshing) return false;
+    refreshing = true;
+    const previousRefreshError = refreshFailed ? message : null;
+    refreshFailed = false;
     try {
       setup = await api('/api/setup');
       if (setup.ready) connections = (await api('/api/connections')).connections;
+      if (previousRefreshError && message === previousRefreshError) message = '';
       return true;
     } catch (error) {
       message = error instanceof Error ? error.message : 'Setup unavailable';
+      refreshFailed = true;
       return false;
+    } finally {
+      refreshing = false;
     }
   }
   const enrollmentKey = 'fulcra.connector.background-enrollment';
@@ -267,6 +277,9 @@
       >
     </aside>{/if}
   {#if message}<p role="status" class="message">{message}</p>{/if}
+  {#if refreshFailed}<button class="subtle" disabled={refreshing} onclick={refresh}
+      >Retry workspace status</button
+    >{/if}
   {#if connections.length}<section class="connections">
       <div class="section-heading">
         <h2>Your connections</h2>
@@ -309,7 +322,7 @@
   <footer>
     Separate deployment for each user <span>·</span> Fulcra v1 data types <span>·</span> Schedules
     and destinations are configured per connection.
-    <p>Live provider acceptance is pending. No source is enabled until its preview is confirmed.</p>
+    <p>Each connection starts collecting only after you review its preview and enable it.</p>
   </footer>
 </main>
 

@@ -3,7 +3,11 @@
   import CredentialLinks from './CredentialLinks.svelte';
   import { onMount, untrack } from 'svelte';
   import ConnectionForm from './ConnectionForm.svelte';
+  import NotionDocuments from './NotionDocuments.svelte';
+  import { supportedType } from '$lib/attio-documents.js';
+  import AttioDocuments from './AttioDocuments.svelte';
   import {
+    getSourceLimit,
     getConnectorSetup,
     setupDefaults,
     describeDestination,
@@ -20,12 +24,27 @@
     onclose: () => void;
     onchanged: () => void;
   } = $props();
-  const initial = untrack(() => ({ config: connection.config, connector: connection.connector }));
+  // Saved chooser rows are reactive proxies; capture plain configuration before
+  // copying editable field selections into this connection's local setup state.
+  const initial = untrack(() => ({
+    config: $state.snapshot(connection.config),
+    connector: connection.connector
+  }));
   const info = untrack(() => getConnectorSetup(initial.connector));
   const defaults = untrack(() => setupDefaults(initial.connector, initial.config));
   const stages = ['Sources', 'Destination', 'Schedule', 'Review'];
+  const sourceLimit = getSourceLimit(initial.connector);
+  const isAttio = initial.connector === 'attio';
   let step = $state(0);
   let resources = $state<any[]>([]);
+  let twoWayEnabled = $state(initial.connector === 'notion' && !!initial.config.twoWay?.enabled);
+  let attioTwoWay = $state(!!initial.config.attio?.twoWay);
+  let includeNotes = $state(!!initial.config.attio?.includeNotes);
+  let writableAttributes = $state<Record<string, string[]>>(
+    structuredClone(initial.config.attio?.writableAttributes ?? {})
+  );
+  let schemas = $state<Record<string, any[]>>({});
+  let twoWayParent = $state(initial.config.twoWay?.parentId ?? '');
   let cursor = $state<string | null>(null);
   let selected = $state<string[]>(initial.config.resources ?? []);
   let mode = $state(defaults.mode);
@@ -44,8 +63,15 @@
   let creatingType = $state(false);
   let typeName = $state('');
   let typeDescription = $state('');
+  const sourcesReady = $derived(
+    selected.length > 0 &&
+      selected.length <= sourceLimit &&
+      (!twoWayEnabled || selected.includes(twoWayParent))
+  );
   const destinationReady = $derived(
-    (mode === 'record' || !!folder.trim()) && (mode === 'file' || !!recordType)
+    (mode === 'record' || !!folder.trim()) &&
+      (mode === 'file' || !!recordType) &&
+      (!attioTwoWay || mode !== 'record')
   );
   const destinationSummary = $derived(describeDestination({ mode, folder, recordType }));
   function invalidate() {
@@ -101,10 +127,46 @@
     preview = null;
     confirmed = false;
   }
+  const selectedObjects = $derived([...new Set(selected.map((id) => id.split(':')[0]))]);
+  const editableAttribute = (attribute: any) =>
+    attribute.writable &&
+    supportedType(attribute.type) &&
+    (!attribute.multiple ||
+      ['select', 'record-reference', 'email-address', 'domain'].includes(attribute.type));
+  async function loadSchema(objectId: string) {
+    await action(async () => {
+      const id = selected.find((id) => id.startsWith(objectId + ':'));
+      if (!id) return;
+      const result = await api(
+        `/api/connections/${connection.id}/documents?schema=${encodeURIComponent(id)}`
+      );
+      schemas[objectId] = result.attributes;
+    });
+  }
+  function selectAttribute(objectId: string, id: string, checked: boolean) {
+    const current = writableAttributes[objectId] ?? [];
+    writableAttributes[objectId] = checked
+      ? [...new Set([...current, id])]
+      : current.filter((value) => value !== id);
+    invalidate();
+  }
   async function saveAndPreview() {
     await action(async () => {
       const result = await api(`/api/connections/${connection.id}`, 'PUT', {
         resources: selected,
+        ...(isAttio
+          ? {
+              attio: {
+                twoWay: attioTwoWay,
+                includeNotes,
+                writableAttributes: attioTwoWay
+                  ? Object.fromEntries(
+                      selectedObjects.map((id) => [id, writableAttributes[id] ?? []])
+                    )
+                  : {}
+              }
+            }
+          : { twoWay: twoWayEnabled ? { enabled: true, parentId: twoWayParent } : null }),
         backfillSince: new Date(since + 'T00:00:00Z').toISOString(),
         intervalSeconds: Number(interval),
         route: { mode, folder, recordType }
@@ -197,7 +259,17 @@
         Number(interval)
       )} · initial date {since}.
     </p>
-    <p>{info.output}</p>
+    <p>
+      {connection.connector === 'notion' && connection.config.twoWay?.enabled
+        ? 'Two-way Notion ↔ Fulcra: editable page titles, Markdown and recoverable archive/restore. Other Notion properties and comments are not mirrored.'
+        : info.output}
+    </p>
+    {#if isAttio}<p>
+        <strong>Current direction:</strong>
+        {attioTwoWay ? 'Attio ↔ Fulcra for the approved fields' : 'Attio → Fulcra only'} · notes {includeNotes
+          ? 'included from selected parents'
+          : 'excluded'}.
+      </p>{/if}
     <p>
       Configuration and preview do not import data. A connection must be enabled before writes
       begin.
@@ -208,7 +280,7 @@
         class:active={step === i}
         aria-current={step === i ? 'step' : undefined}
         disabled={busy ||
-          (i > 0 && !selected.length) ||
+          (i > 0 && !sourcesReady) ||
           (i > 1 && !destinationReady) ||
           (i === 3 && !preview)}
         onclick={() => (step = i)}>{stage}</button
@@ -220,7 +292,109 @@
           <h3>3. Select {info.sourceLabel}</h3>
           <p>
             {info.sourceHelp} Only the IDs you select are collected. Discovery does not enable syncing.
+            Choose up to {sourceLimit} per connection.
           </p>
+          {#if connection.connector === 'notion'}
+            <label class="choice"
+              ><input
+                type="checkbox"
+                bind:checked={twoWayEnabled}
+                onchange={() => {
+                  if (twoWayEnabled) mode = 'file';
+                  invalidate();
+                }}
+              /><span>Enable two-way Notion ↔ Fulcra sync</span></label
+            >
+            {#if twoWayEnabled}
+              <p>
+                Two-way sync can update, create, archive and restore Notion pages. In the Notion
+                connection console → Configuration, enable Read content, Update content and Insert
+                content. Keep comment, user and agent access off. Nothing writes until you preview
+                and enable below.
+              </p>
+              <label
+                >Creation parent page<select bind:value={twoWayParent} onchange={invalidate}
+                  ><option value="">Choose a selected page</option>{#each selected as id}<option
+                      value={id}>{resources.find((r) => r.id === id)?.name ?? id}</option
+                    >{/each}</select
+                ></label
+              >
+              <p>
+                New pages created from Fulcra become children of this page; new Notion children here
+                are discovered automatically. Editable working files go under the destination’s live
+                folder for this connection. The parent, folder and initial selection are fixed once
+                bound; use another connection for a different scope.
+              </p>
+            {/if}
+          {/if}
+          {#if isAttio}
+            <label class="choice"
+              ><input
+                type="checkbox"
+                bind:checked={attioTwoWay}
+                onchange={() => {
+                  if (attioTwoWay && mode === 'record') mode = 'file';
+                  invalidate();
+                }}
+              /><span>Enable two-way Attio ↔ Fulcra sync</span></label
+            >
+            {#if attioTwoWay}
+              <p>
+                Only approved fields on the exact selected records can be written. Records, schema
+                and lists are not created. Select up to 32 writable fields for each object.
+                Unsupported and enriched fields stay read-only. Object, field, source and folder
+                choices are fixed after binding; use another connection for a different scope.
+              </p>
+              {#each selectedObjects as objectId}
+                <section class="new-type" aria-label={`Writable fields for object ${objectId}`}>
+                  <h4>Object <code>{objectId}</code></h4>
+                  <button class="secondary" onclick={() => loadSchema(objectId)}
+                    >Load writable fields for this object</button
+                  >
+                  {#each schemas[objectId] ?? [] as attribute}
+                    <label class="choice"
+                      ><input
+                        type="checkbox"
+                        checked={(writableAttributes[objectId] ?? []).includes(attribute.id)}
+                        disabled={!editableAttribute(attribute) ||
+                          (!(writableAttributes[objectId] ?? []).includes(attribute.id) &&
+                            (writableAttributes[objectId] ?? []).length >= 32)}
+                        onchange={(event) =>
+                          selectAttribute(objectId, attribute.id, event.currentTarget.checked)}
+                      /><span
+                        >{editableAttribute(attribute)
+                          ? 'Allow '
+                          : 'Read-only: '}{attribute.title}<small
+                          >{attribute.type} · {attribute.id}</small
+                        ></span
+                      ></label
+                    >
+                  {/each}
+                  {#if !schemas[objectId]}<p>
+                      Load schema from a selected record to review fields before enabling any
+                      writes.
+                    </p>{/if}
+                  <p>{(writableAttributes[objectId] ?? []).length} approved writable fields.</p>
+                </section>
+              {/each}
+
+              <p>
+                Notes are API text projections, not image/file backups. Editing publishes a new
+                linked note revision on the same record; the original rich note stays intact. Notes
+                use your chosen initial history window, proposed at 30 days. No note writes occur
+                until you preview and enable.
+              </p>
+            {/if}
+            <label class="choice"
+              ><input type="checkbox" bind:checked={includeNotes} onchange={invalidate} /><span
+                >Include notes from selected records</span
+              ></label
+            >
+            {#if !attioTwoWay}<p>
+                One-way mode imports optional API text projections from these selected parents. It
+                never publishes note revisions or field edits.
+              </p>{/if}
+          {/if}
           <button class="secondary" disabled={busy} onclick={discover}
             >{loaded
               ? cursor
@@ -241,10 +415,16 @@
               No accessible {info.sourceLabel} were returned. Check the credential permissions and provider
               sharing settings.
             </p>{/if}
+          {#if loaded && !resources.length && info.sourceTroubleshooting}<p>
+              {info.sourceTroubleshooting}
+            </p>{/if}
+          {#if selected.length > sourceLimit}<p role="alert" class="error">
+              Select at most {sourceLimit} sources per connection.
+            </p>{/if}
           {#if selected.length && !resources.length}<p>
               {selected.length} sources saved. Rediscover to edit them.
             </p>{/if}
-          <button class="primary" disabled={busy || !selected.length} onclick={() => (step = 1)}
+          <button class="primary" disabled={busy || !sourcesReady} onclick={() => (step = 1)}
             >Continue to destination</button
           >
         </section>{:else if step === 1}<section class="stage">
@@ -255,9 +435,10 @@
             each connection.
           </p>
           <label
-            >Write format<select bind:value={mode} onchange={invalidate}
-              ><option value="file">Files in a folder</option><option value="record"
-                >v1 records</option
+            >Write format<select bind:value={mode} disabled={twoWayEnabled} onchange={invalidate}
+              ><option value="file">Files in a folder</option><option
+                value="record"
+                disabled={attioTwoWay}>v1 records</option
               ><option value="both">Files + v1 records</option></select
             ></label
           >
@@ -269,9 +450,21 @@
               /></label
             >
             <p>
-              Files go under this path, grouped by stable source revision. For example <code
-                >{folder || '/your-folder'}/revision-id/document</code
-              >. Existing history is retained.
+              {#if twoWayEnabled}
+                Editable working copies go under <code
+                  >{folder || '/your-folder'}/live/{connection.id}/page-id.md</code
+                >. Edit the title, Markdown or archived field there, or use the editor below.
+                Earlier versions are retained.
+              {:else if attioTwoWay}
+                Typed working copies and a paginated agent index go under <code
+                  >{folder || '/your-folder'}/live/{connection.id}/</code
+                >. Edit only approved values or the linked-note revision draft. Verified snapshots
+                and conflicts are retained.
+              {:else}
+                Files go under this path, grouped by stable source revision. For example <code
+                  >{folder || '/your-folder'}/revision-id/document</code
+                >. Existing history is retained.
+              {/if}
             </p>{/if}
           {#if mode !== 'file'}<label
               >Recordable v1 data type<select bind:value={recordType} onchange={invalidate}
@@ -408,7 +601,7 @@
           <button
             class="primary"
             disabled={busy ||
-              !selected.length ||
+              !sourcesReady ||
               !destinationReady ||
               Number(interval) < 60 ||
               Number(interval) > 86400 ||
@@ -428,6 +621,7 @@
               ? 'This is a bounded sample.'
               : (preview.detail ?? 'Provider retry required; go back and preview again.')}
           </p>
+          {#if preview.complete && preview.detail}<p>{preview.detail}</p>{/if}
           {#if preview.complete && !preview.outputs?.length}<p>
               No matching items were returned for this sample. Enabling will watch the selected
               sources for future changes.
@@ -461,6 +655,15 @@
     </fieldset>
   </div>
   {#if message}<p role="alert" class="error">{message}</p>{/if}
+  {#if connection.connector === 'notion' && connection.config.twoWay?.enabled}<NotionDocuments
+      connectionId={connection.id}
+      active={connection.status === 'ready'}
+    />{/if}
+  {#if connection.connector === 'attio' && connection.config.attio?.twoWay}<AttioDocuments
+      connectionId={connection.id}
+      active={connection.status === 'ready'}
+      approvedResources={connection.config.resources ?? []}
+    />{/if}
   <div class="actions">
     <button class="secondary" disabled={busy} onclick={() => (replacing = true)}
       >Replace credential</button

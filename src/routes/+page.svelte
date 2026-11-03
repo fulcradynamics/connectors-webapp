@@ -1,6 +1,14 @@
 <script>
-  const repo = 'https://github.com/ashfulcra/connectors-webapp';
+  const repo = 'https://github.com/fulcradynamics/connectors-webapp';
   const examples = [
+    {
+      name: 'Attio',
+      mark: 'At',
+      file: 'attio',
+      pattern: 'Typed fields and linked notes',
+      detail:
+        'Exact People/Companies records with optional approved two-way fields and preserved note revisions.'
+    },
     {
       name: 'Granola',
       mark: 'Gr',
@@ -37,6 +45,14 @@
       detail:
         'Selected channels and threads. Learn rate limits, replies, and event-assisted updates.',
       file: 'slack'
+    },
+    {
+      name: 'Garmin',
+      mark: 'Ga',
+      pattern: 'Activities & health → your store',
+      detail:
+        'Personal API access to selected activities, daily summaries, sleep, heart rate and HRV.',
+      file: 'garmin'
     }
   ];
 </script>
@@ -106,7 +122,7 @@
       <div class="section-heading">
         <div>
           <p class="eyebrow">Learn by example</p>
-          <h2>Five connectors. Five useful patterns.</h2>
+          <h2>{examples.length} connectors, with setup and source controls.</h2>
         </div>
         <p>Start with one. Reuse the pieces for the next.</p>
       </div>
@@ -125,9 +141,8 @@
         {/each}
       </div>
       <p class="preview-note">
-        <span class="dot"></span> Developer preview: adapters have fixture coverage. Live account verification
-        is still pending; native hosting and scheduling deploy with the app. Read each guide for supported
-        data and limits.
+        <span class="dot"></span> Connect the services you use. Each guide covers setup, supported data
+        and sync controls.
       </p>
     </section>
 
@@ -144,15 +159,18 @@
           <span class="step-number">01</span>
           <h3>Fork or clone</h3>
           <p>
-            Fork <a href={repo}>ashfulcra/connectors-webapp</a> to keep your changes and contribute them
-            back. Or clone it for a local checkout.
+            Fork <a href={repo}>fulcradynamics/connectors-webapp</a> to keep your changes and contribute
+            them back. Or clone it for a local checkout.
           </p>
           <p class="notice">
-            The source is public and MIT licensed. Fork it, then work from <code>main</code>.
+            The source is public and MIT licensed. This site previews
+            <a href={`${repo}/pull/4`}>Attio and related changes awaiting review</a> from
+            <code>feat/attio-two-way</code>. Use the command below to reproduce this preview;
+            <code>main</code> remains the reviewed baseline.
           </p>
           <pre aria-label="Clone and run the preview"><code
-              >git clone --branch main \
-  https://github.com/ashfulcra/connectors-webapp.git
+              >git clone --branch feat/attio-two-way \
+  https://github.com/fulcradynamics/connectors-webapp.git
 cd connectors-webapp
 npm ci
 npm run dev</code
@@ -190,10 +208,9 @@ node scripts/deploy.mjs</code
             <a href="/guides/setup.md">full setup and recovery instructions</a>.
           </p>
           <p class="notice">
-            No separate database account or cron setup is needed for the native backend. Reviewed
-            distribution and a second-owner clean-clone check are still pending; see the <a
+            No separate database account or cron setup is needed for the native backend. See the <a
               href="/guides/hosting-and-storage.md">hosting guide</a
-            >.
+            > for deployment and recovery instructions.
           </p>
         </article>
         <article>
@@ -225,7 +242,7 @@ node scripts/deploy.mjs</code
       </div>
       <p class="guide-entry">
         Start with the <a href="/guide">user guide</a> or give your coding agent the
-        <a href="/guides/agent.md">agent instructions (Markdown)</a>. All five adapters are
+        <a href="/guides/agent.md">agent instructions (Markdown)</a>. All seven adapters are
         implemented in the template; run their synthetic fixtures with
         <code>npm run test:examples</code>.
       </p>
@@ -269,8 +286,8 @@ node scripts/deploy.mjs</code
               Open a pull request to the main project’s <code>main</code> branch for review.
             </li>
             <li>
-              Include setup instructions, test evidence and known limits. Maintainers review
-              connectors before they join the template.
+              Include setup instructions, test evidence and known limits. Fulcra organization
+              members review and merge connectors before they join the template.
             </li>
           </ol>
           <a class="text-link" href="/guides/contributing.md">Read the contribution guide ↗</a>
@@ -278,8 +295,11 @@ node scripts/deploy.mjs</code
       </div>
     </section>
     <section class="closing">
-      <p class="eyebrow">Your data has a home</p>
-      <h2>Fulcra is the database.</h2>
+      <h2>Your data should be yours.</h2>
+      <p>
+        Fulcra is the home for all of your data, under your control, accessible to the agents and
+        collaborators you choose.
+      </p>
       <p>
         Structured imports go into v1 data types. Documents go into folders. Your connector app
         brings them together, under your account, on a schedule you control.

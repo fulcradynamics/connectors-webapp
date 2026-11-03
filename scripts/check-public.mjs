@@ -70,6 +70,7 @@ try {
       'GitHub',
       'Notion',
       'Slack',
+      'Garmin',
       '/app'
     ])
       assert.ok(html.includes(text), text);
@@ -91,7 +92,8 @@ try {
       'Asana',
       'GitHub',
       'Notion',
-      'Slack'
+      'Slack',
+      'Garmin'
     ])
       assert.ok(html.includes(text), text);
     for (const name of [
@@ -101,7 +103,7 @@ try {
       'setup',
       'contributing',
       'operations',
-      ...['granola', 'asana', 'github', 'notion', 'slack'].map((x) => 'providers/' + x)
+      ...['granola', 'asana', 'github', 'notion', 'slack', 'garmin'].map((x) => 'providers/' + x)
     ]) {
       const response = await fetch(`${base}/guides/${name}.md`, { headers });
       assert.equal(response.status, 200, name);

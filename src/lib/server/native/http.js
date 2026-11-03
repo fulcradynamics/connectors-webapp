@@ -18,19 +18,44 @@ const context = (/** @type {string} */ kind) =>
 /** @type {string|undefined} */ let initialRunId = env.CONNECTORS_NATIVE_ROOT_RUN_ID || undefined;
 /** @param {string} runId @returns {Promise<any>} */
 export async function readSnapshot(runId) {
-  const stream = getRun(runId).getReadable({ namespace: 'state', startIndex: -1 });
-  const reader = stream.getReader();
+  const run = getRun(runId);
+  const reading = {
+    reader: /** @type {ReadableStreamDefaultReader<any> | undefined} */ (undefined)
+  };
   let timer;
+  let stopped = false;
   try {
     return await Promise.race([
-      reader.read().then((result) => result.value),
+      (async () => {
+        // Negative offsets disable the SDK's interrupted-stream recovery. Resolve the
+        // retained tail once, then read its absolute position with recovery enabled.
+        const tail = await run.getReadable({ namespace: 'state' }).getTailIndex();
+        if (stopped) return;
+        if (tail < 0)
+          error(503, 'Controller has no published state; preserve its run for recovery');
+        reading.reader = run.getReadable({ namespace: 'state', startIndex: tail }).getReader();
+        const result = await reading.reader.read();
+        if (!result.value)
+          error(503, 'Controller state is unavailable; preserve its run for recovery');
+        return result.value;
+      })(),
       new Promise((_, reject) => {
-        timer = setTimeout(() => reject(Error('Controller snapshot unavailable')), 8000);
+        timer = setTimeout(() => {
+          try {
+            error(
+              503,
+              'Controller state read is temporarily unavailable; retry the saved operation'
+            );
+          } catch (cause) {
+            reject(cause);
+          }
+        }, 20000);
       })
     ]);
   } finally {
+    stopped = true;
     clearTimeout(timer);
-    await reader.cancel().catch(() => {});
+    await reading.reader?.cancel().catch(() => {});
   }
 }
 /** @param {string} accessToken */
@@ -157,6 +182,16 @@ async function currentSnapshot(accessToken = undefined) {
   }
   error(503, 'Native controller is not available');
 }
+/** Request admission uses only the authenticated controller view, never submitted config.
+ * @param {string} path @param {string} method @param {any} view */
+export function nativeBodyLimit(path, method, view = null) {
+  if (path.startsWith('/api/webhooks/')) return 128000;
+  if (/^\/api\/connections\/[a-f0-9-]{36}\/documents$/i.test(path)) return 64000;
+  const detail = path.match(/^\/api\/connections\/([a-f0-9-]{36})$/i);
+  if (method === 'PUT' && detail && view?.connections?.[detail[1]]?.connector === 'attio')
+    return 128000;
+  return 32000;
+}
 /** @param {any} event @returns {Promise<Response|undefined>} */
 export async function nativeHTTP(event) {
   if (env.CONNECTORS_BACKEND !== 'workflow') return;
@@ -239,7 +274,16 @@ export async function nativeHTTP(event) {
     }
     return json({ done: false, status }, { headers });
   }
-  const snapshot = await currentSnapshot(owner?.accessToken);
+  const detail = path.match(/^\/api\/connections\/([a-f0-9-]{36})$/i);
+  const needsSnapshot =
+    setup ||
+    isWebhook ||
+    (method === 'GET' && path === '/api/connections') ||
+    ((method === 'GET' || method === 'PUT') && !!detail);
+  // Ordinary commands read and validate authoritative state inside the controller.
+  // Synchronous views, webhook preflight and connector-specific PUT admission use snapshots.
+  const snapshot = needsSnapshot ? await currentSnapshot(owner?.accessToken) : null;
+  if (!needsSnapshot && owner) await ensureMarker(owner.accessToken);
   if (setup)
     return json(
       {
@@ -256,7 +300,6 @@ export async function nativeHTTP(event) {
     );
   if (method === 'GET' && path === '/api/connections')
     return json({ connections: Object.values(snapshot.view.connections) }, { headers });
-  const detail = path.match(/^\/api\/connections\/([a-f0-9-]{36})$/i);
   if (method === 'GET' && detail) {
     const c = snapshot.view.connections[detail[1]];
     if (!c) error(404, 'Unknown connection');
@@ -277,7 +320,7 @@ export async function nativeHTTP(event) {
     );
   }
   const text = method === 'GET' ? undefined : await request.text();
-  if (text && Buffer.byteLength(text) > (isWebhook ? 128000 : 32000))
+  if (text && Buffer.byteLength(text) > nativeBodyLimit(path, method, snapshot?.view))
     error(413, 'Request too large');
   let commandHeaders = {};
   if (isWebhook) {
