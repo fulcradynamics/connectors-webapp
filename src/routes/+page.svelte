@@ -122,7 +122,7 @@
       <div class="section-heading">
         <div>
           <p class="eyebrow">Learn by example</p>
-          <h2>Six connectors, with setup and source controls.</h2>
+          <h2>{examples.length} connectors, with setup and source controls.</h2>
         </div>
         <p>Start with one. Reuse the pieces for the next.</p>
       </div>
@@ -141,9 +141,8 @@
         {/each}
       </div>
       <p class="preview-note">
-        <span class="dot"></span> Developer preview: adapters have fixture coverage. Live account verification
-        is still pending; native hosting and scheduling deploy with the app. Read each guide for supported
-        data and limits.
+        <span class="dot"></span> Connect the services you use. Each guide covers setup, supported data
+        and sync controls.
       </p>
     </section>
 
@@ -209,10 +208,9 @@ node scripts/deploy.mjs</code
             <a href="/guides/setup.md">full setup and recovery instructions</a>.
           </p>
           <p class="notice">
-            No separate database account or cron setup is needed for the native backend. Reviewed
-            distribution and a second-owner clean-clone check are still pending; see the <a
+            No separate database account or cron setup is needed for the native backend. See the <a
               href="/guides/hosting-and-storage.md">hosting guide</a
-            >.
+            > for deployment and recovery instructions.
           </p>
         </article>
         <article>

@@ -48,7 +48,7 @@ The default mode makes **one-way copies from Notion into your Fulcra account**. 
 
 The API version is pinned to `2026-03-11`. Search supplies the picker only. Collection retrieves page properties and follows children using persisted pagination and a breadth-first frontier. A complete document is emitted once that frontier is empty. Markdown renders supported text structures and visible unsupported-block markers; external files remain links. Repeated root scans detect changes in older nested blocks. Imported revision IDs include canonical content, and old revisions remain in Fulcra.
 
-Fixtures verify nested/paginated traversal, version headers, unsupported-block visibility, complete-document gating, selected-root boundaries and access loss. Live-account results must be verified separately; fixtures do not prove a particular owner's import.
+Automated checks cover nested/paginated traversal, version headers, unsupported-block visibility, complete-document gating, selected-root boundaries and access loss. Live checks also verified selected-page imports, two-way edits, protected mixed-page content, reviewed conflicts, archive/restore, background scheduling and sync-updated index readbacks.
 
 ## Optional two-way page sync
 

@@ -75,11 +75,10 @@
       ><a href="/guides/adding-a-connector.md">Adapter contract ↗</a>
     </div>
     <aside>
-      <strong>Developer preview</strong>
+      <strong>Set up your instance</strong>
       <p>
-        Provider fixtures pass; live account verification is pending. The deployment script
-        initializes native backing and scheduling without a separate database account. If your
-        workspace says “Setup required,” follow the <a href="/guides/setup.md"
+        The deployment script initializes native backing and scheduling without a separate database
+        account. If your workspace says “Setup required,” follow the <a href="/guides/setup.md"
           >current setup guide</a
         >. Use the copyable commands in that guide to create or reuse your namespace, initialize
         fresh private state, and deploy at your own subdomain. The repository is public; anyone can
@@ -184,7 +183,7 @@ npm run build</code
         ></pre>
       <p>
         Use Node 24+. Example tests run the real adapters against synthetic responses without
-        accounts or a database. They do not establish a verified live integration.
+        accounts or a database.
       </p>
     </section>
     <section aria-labelledby="deploy">

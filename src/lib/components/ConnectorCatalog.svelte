@@ -80,7 +80,7 @@
       >{/each}
   </div>
   <p class="muted">
-    Live account verification is pending for these examples. Google connectors are deferred.
+    Choose a connector to review its setup steps, supported sources and sync options.
   </p>
 </section>
 
