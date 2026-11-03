@@ -209,9 +209,13 @@
       </p>
     </div>
     <div class="badge">
-      <span class:ready={setup?.ready}></span>{setup?.ready
-        ? 'Personal deployment'
-        : 'Setup required'}
+      <span class:ready={setup?.ready}></span>{refreshFailed
+        ? 'Setup check unavailable'
+        : !setup
+          ? 'Checking setup…'
+          : setup.ready
+            ? 'Personal deployment'
+            : 'Setup required'}
     </div>
   </div>
   <section class="setup" id="background-access">
