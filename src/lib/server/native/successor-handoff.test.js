@@ -28,7 +28,7 @@ const nativeController = new Function(
     [Symbol.asyncIterator]: () => ({ next: () => new Promise(() => {}) }),
     dispose: mocks.dispose
   }),
-  async (duration) => {
+  async (/** @type {number} */ duration) => {
     mocks.sleep(duration);
   },
   {
