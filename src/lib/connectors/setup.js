@@ -15,9 +15,9 @@ const providers = {
     setupUrl: 'https://attio.com/help/reference/apps/generating-an-api-key',
     setupLink: 'Attio API key creation and management help',
     credentialSteps: [
-      'As a workspace admin, open the dropdown beside your Attio workspace name → Workspace settings → Developers → Create access token.',
+      'As a workspace admin, open the dropdown beside your Attio workspace name → Workspace settings → Developers → Create access token (or New access token when a token already exists).',
       'Enter a token Name. Set Records to Read (one-way) or Read-write (two-way), Object Configuration to Read, and Notes to Read (import) or Read-write (linked revisions) only when including notes. Leave other permissions Disabled, review, then click Save.',
-      'Copy the access token from Developers and paste it only into the protected Attio workspace access token field here. Never put the token in chat, documents or source. Verification binds this connection to its workspace and does not enable collection.',
+      'After Save, find the new token row and use Show access token if it is masked. Copy its value and paste it only into the protected Attio workspace access token field here. Never put the token in chat, documents or source. Verification binds this connection to its workspace and does not enable collection.',
       'To change scopes or revoke access later, return to Workspace settings → Developers → the token’s three-dot menu → Edit or Delete. Tokens are available on all plans and require an admin to manage.',
       'Select exact People or Companies records next. For optional two-way sync, explicitly approve writable fields for each object and optionally include linked note revisions. Review Destination, Schedule and preview before enabling.'
     ],

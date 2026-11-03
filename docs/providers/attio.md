@@ -7,9 +7,9 @@ This connector supports exact existing **People and Companies records**. Import 
 Use the official [API key creation and management help](https://attio.com/help/reference/apps/generating-an-api-key). Attio documents token creation inside each workspace, without a universal creation URL. The separate [API authentication reference](https://docs.attio.com/rest-api/guides/authentication) describes bearer authentication.
 
 1. Sign in to your own Attio workspace as an **admin**. API keys are available on all plans according to Attio’s help.
-2. Open the dropdown beside the workspace name → **Workspace settings** → **Developers** → **Create access token**.
+2. Open the dropdown beside the workspace name → **Workspace settings** → **Developers** → **Create access token** (or **New access token** when a token already exists).
 3. Enter **Name**. Set **Records** to **Read** for import or **Read-write** for two-way fields, **Object Configuration** to **Read**, and **Notes** to **Read** for import or **Read-write** for linked revisions when including notes. Leave all other permissions **Disabled**, review them, then click **Save**. These control labels were checked in a live workspace.
-4. From **Developers**, click the token to copy it. Paste it only into this app’s protected **Attio workspace access token** field, enter a connection name, then **Verify and continue →**. The server encrypts the token, requires an active credential and binds its workspace UUID. Verification does not enable collection. Never paste API keys in chat, documents, source, URLs or issues.
+4. After **Save**, find the new token row. If masked, use **Show access token**, then copy its value. Paste it only into this app’s protected **Attio workspace access token** field, enter a connection name, then **Verify and continue →**. The server encrypts the token, requires an active credential and binds its workspace UUID. Verification does not enable collection. Never paste API keys in chat, documents, source, URLs or issues.
 5. For replacement or revocation, return to **Workspace settings → Developers**. The token’s three-dot menu offers **Edit** for its name/scopes or **Delete** for revocation. Attio documents tokens as nonexpiring until deleted. Replacing a credential here retains settings and pauses collection for fresh preview/enable. A different workspace needs another connection.
 
 | Capability                       | Minimum scopes                                              |
@@ -49,6 +49,8 @@ Working documents preserve read-only identity, schema and protected metadata. Di
 The note editor separates **Source snapshot** from **Linked note revision draft**. The import is an **API text projection, not a complete image or file backup**. Images and hidden rich blocks can be absent from the API projection; the connector does not download those bytes or replace the original note content.
 
 **Publish linked note revision** creates a new immutable text note on the exact selected parent, with source/predecessor identities and operation provenance. Each later accepted edit creates another revision. The original rich note remains intact. Concurrent changes to an original or current revision require review. An uncertain note-creation outcome stays uncertain while the worker looks for exact parent/operation evidence; it never blindly repeats an uncertain POST. A source link may lead to the record with an exact note ID rather than an invented note deep link.
+
+Attio can remove empty paragraph lines when returning its Markdown projection. After verifying the exact operation provenance and a narrowly derived paragraph projection, the working copy shows the returned text. The original submitted draft remains in immutable attempt evidence, alongside original/observed payload hashes. This is a lossy API projection, not general Markdown equivalence. Other content changes, or complex Markdown whose serialization cannot be verified, stay held for review without another creation attempt.
 
 ## Storage, navigation and limits
 

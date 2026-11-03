@@ -265,6 +265,89 @@ it('does not replay an uncertain note POST when parent enumeration has zero matc
   expect((await f.entry('note')).recovery.document.text).toBe('Uncertain note revision');
 });
 
+it.each([false, true])(
+  'verifies a paragraph-normalized note and retains original bytes without echo (restart: %s)',
+  async (restart) => {
+    const f = fixture({ notes: true });
+    await f.until(async () => (await f.entry('note'))?.status === 'synced');
+    const original = structuredClone(f.notesById.get(noteId)),
+      create = f.api.createNote;
+    f.api.createNote = async (/** @type {any[]} */ ...args) => {
+      const note = await create(...args);
+      note.text = note.text.replace(/\n\n/g, '\n');
+      f.notesById.set(createdNoteId, structuredClone(note));
+      return note;
+    };
+    await f.edit((d) => {
+      d.text = '**First paragraph.**\n\nSecond paragraph.';
+    }, 'note');
+    if (restart) {
+      await f.until(async () => {
+        const p = (await f.manifest()).pending;
+        return p?.phase === 'note-guard-file' && p.file.phase === 'transfer';
+      });
+      const saved = structuredClone(f.state.grants);
+      await f.step();
+      f.state.grants = saved;
+    }
+    await f.until(
+      async () =>
+        (await f.entry('note'))?.headNoteId === createdNoteId &&
+        (await f.entry('note'))?.status === 'synced',
+      300
+    );
+    const e = await f.entry('note'),
+      path = `${folder(f.c)}/notes/${bucketId(e.id)}/${e.id}.json`,
+      file = await f.client.latestFile(path);
+    expect(decodeDocument(file.content).text).toBe('**First paragraph.**\nSecond paragraph.');
+    expect(e.headRevision.serialization).toBe('attio-paragraph-projection-v1');
+    const retained = JSON.parse(
+      new TextDecoder().decode(await f.client.readFileBytes(e.headRevision.acceptedSnapshot.fileId))
+    );
+    expect(retained.accepted.text).toBe('**First paragraph.**\n\nSecond paragraph.');
+    expect(f.notesById.get(noteId)).toEqual(original);
+    for (let n = 0; n < 120; n++) await f.step();
+    expect(f.writes).toHaveLength(1);
+    expect((await f.entry('note')).status).toBe('synced');
+    expect((await f.entry('note')).fileId).toBe(file.id);
+  }
+);
+
+it.each(['title', 'text'])(
+  'keeps submitted evidence separate from a disjoint merged note publication (%s)',
+  async (remoteField) => {
+    const f = fixture({ notes: true });
+    await f.until(async () => (await f.entry('note'))?.status === 'synced');
+    const create = f.api.createNote;
+    f.api.createNote = async (/** @type {any[]} */ ...args) => {
+      const note = await create(...args);
+      note.text = note.text.replace(/\n\n/g, '\n');
+      f.notesById.set(createdNoteId, structuredClone(note));
+      return note;
+    };
+    await f.edit((d) => {
+      if (remoteField === 'title') d.text = '**Local paragraph.**\n\nSecond paragraph.';
+      else d.title = 'Accepted local title';
+    }, 'note');
+    f.notesById.get(noteId)[remoteField] =
+      remoteField === 'title'
+        ? 'Independently changed remote title'
+        : '**Remote paragraph.**\n\nSecond paragraph.';
+    await f.until(
+      async () =>
+        (await f.entry('note'))?.headNoteId === createdNoteId &&
+        (await f.entry('note'))?.status === 'synced',
+      300
+    );
+    const e = await f.entry('note');
+    expect(e.headRevision.submittedPayloadHash).not.toBe(e.headRevision.originalPayloadHash);
+    expect(f.writes).toHaveLength(1);
+    for (let n = 0; n < 80; n++) await f.step();
+    expect(f.writes).toHaveLength(1);
+    expect((await f.entry('note')).status).toBe('synced');
+  }
+);
+
 it('pulls a source-only field change and preserves a stable no-op working revision', async () => {
   const f = fixture();
   await f.until(async () => (await f.entry())?.status === 'synced');

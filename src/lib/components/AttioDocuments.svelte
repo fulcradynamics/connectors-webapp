@@ -365,7 +365,9 @@
         >
         <p>
           Publishing creates a new linked text note on this exact parent record. Up to 24 KiB of
-          note text. Images, files and hidden rich blocks are not included in this projection.
+          note text. Attio may normalize paragraph spacing in the returned text projection; the
+          original submitted draft is retained as evidence. Images, files and hidden rich blocks are
+          not included in this projection.
         </p>
         <button
           class="primary"

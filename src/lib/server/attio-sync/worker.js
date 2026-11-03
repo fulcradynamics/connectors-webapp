@@ -22,7 +22,12 @@ import { fileIntent, advanceFile } from './files.js';
 import { baselineFor, reconcile } from './reconcile.js';
 import { queueIndex, advanceIndex, indexStatus } from './index.js';
 import { readRemoteObservation, providerHash, assertBinding } from './projection.js';
-import { prepareRevision, matchesRevision } from './note-revisions.js';
+import {
+  prepareRevision,
+  matchesRevision,
+  revisionReadback,
+  notePayloadHash
+} from './note-revisions.js';
 import { attioAPI } from './provider.js';
 
 /** @param {any} c @param {any} e */
@@ -866,7 +871,8 @@ export async function advanceAttioSync(state, c, { crypto, client, provider, api
         deadline
       );
       assertBinding(e, c, note.binding, p.createdNoteId);
-      if (!matchesRevision(note, p.revision)) {
+      const readback = revisionReadback(note, p.revision);
+      if (!readback) {
         retain(
           e,
           p,
@@ -878,15 +884,50 @@ export async function advanceAttioSync(state, c, { crypto, client, provider, api
       }
       if (m.ownedNotes[p.createdNoteId] && m.ownedNotes[p.createdNoteId] !== e.id)
         throw Error('Attio revision lineage collision');
+      // A crash after external guard transfer/POST may precede persistence of its
+      // reference. Recover the exact immutable accepted bytes before adoption.
+      const guardPath = `${folder(c)}/.attempts/${p.operationId}.json`;
+      let guard;
+      if (p.attemptGuard) {
+        if (p.attemptGuard.path !== guardPath) throw Error('Attio attempt guard scope changed');
+        const bytes = await client.readFileBytes(p.attemptGuard.fileId, 64 * 1024),
+          content = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+        if (contentHash(content) !== p.attemptGuard.hash)
+          throw Error('Attio attempt guard changed');
+        guard = { id: p.attemptGuard.fileId, content };
+      } else guard = (await client.fileState(guardPath)).file;
+      if (!guard) throw Error('Attio accepted note evidence unavailable');
+      const retained = JSON.parse(guard.content),
+        accepted = decodeDocument(JSON.stringify(retained.accepted));
+      assertBinding(e, c, accepted.binding, e.binding.noteId);
+      if (
+        accepted.kind !== 'note' ||
+        accepted.headNoteId !== p.revision.marker.previousNoteId ||
+        canonical(retained.accepted) !== canonical(p.accepted) ||
+        guard.content !== canonical({ ...p.revision.marker, accepted: retained.accepted }) + '\n'
+      )
+        throw Error('Attio accepted note evidence differs');
+      p.attemptGuard = { fileId: guard.id, hash: contentHash(guard.content), path: guardPath };
       m.ownedNotes[p.createdNoteId] = e.id;
       e.headNoteId = p.createdNoteId;
       e.headRevision = {
         marker: p.revision.marker,
         title: p.revision.title,
-        footer: p.revision.footer,
-        draftTitle: p.revision.draftTitle
+        footer: readback.footer,
+        draftTitle: p.revision.draftTitle,
+        serialization: readback.serialization,
+        submittedPayloadHash: notePayloadHash(accepted),
+        originalPayloadHash: p.revision.marker.payloadHash,
+        observedPayloadHash: notePayloadHash(readback),
+        acceptedSnapshot: p.attemptGuard
       };
-      p.document = { ...p.document, headNoteId: p.createdNoteId };
+      p.beforeCanonicalDocument = p.document;
+      p.document = {
+        ...p.document,
+        title: readback.title,
+        text: readback.text,
+        headNoteId: p.createdNoteId
+      };
       if (p.attemptSourceHash && p.sourceHash !== p.attemptSourceHash) {
         e.sourceHash = p.attemptSourceHash;
         const fresh = await readRemoteObservation(e, c, credential, { api, deadline });
@@ -903,12 +944,13 @@ export async function advanceAttioSync(state, c, { crypto, client, provider, api
       // The note head metadata changes only after created-note GET readback; compare
       // the preceding accepted file for this one canonical rewrite.
       const expected =
-        p.document.kind === 'note'
+        p.beforeCanonicalDocument ??
+        (p.document.kind === 'note'
           ? {
               ...p.document,
               headNoteId: p.revision?.marker.previousNoteId ?? p.document.headNoteId
             }
-          : (p.beforeCanonicalDocument ?? p.document);
+          : p.document);
       const guard = { ...p, document: expected };
       if (!sameWorking(guard, current)) {
         p.interveningFileIds = guard.interveningFileIds;

@@ -322,7 +322,7 @@
   <footer>
     Separate deployment for each user <span>·</span> Fulcra v1 data types <span>·</span> Schedules
     and destinations are configured per connection.
-    <p>Live provider acceptance is pending. No source is enabled until its preview is confirmed.</p>
+    <p>Each connection starts collecting only after you review its preview and enable it.</p>
   </footer>
 </main>
 
