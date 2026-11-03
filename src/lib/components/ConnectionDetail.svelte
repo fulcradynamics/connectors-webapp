@@ -24,7 +24,12 @@
     onclose: () => void;
     onchanged: () => void;
   } = $props();
-  const initial = untrack(() => ({ config: connection.config, connector: connection.connector }));
+  // Saved chooser rows are reactive proxies; capture plain configuration before
+  // copying editable field selections into this connection's local setup state.
+  const initial = untrack(() => ({
+    config: $state.snapshot(connection.config),
+    connector: connection.connector
+  }));
   const info = untrack(() => getConnectorSetup(initial.connector));
   const defaults = untrack(() => setupDefaults(initial.connector, initial.config));
   const stages = ['Sources', 'Destination', 'Schedule', 'Review'];

@@ -172,8 +172,9 @@ import Detail from '${repo}/src/lib/components/ConnectionDetail.svelte';
 import Documents from '${repo}/src/lib/components/AttioDocuments.svelte';
 let view=$state('form');
 const connection={id:'${connectionId}',connector:'attio',label:'Synthetic Attio',account_id:'fixture-workspace',status:'draft',config:{}};
-</script><nav><button onclick={()=>view='form'}>Test form</button><button onclick={()=>view='setup'}>Test setup</button><button onclick={()=>view='docs'}>Test documents</button></nav>
-{#if view==='form'}<Form connector="attio" oncreated={()=>{}} oncancel={()=>{}} />{:else if view==='setup'}<Detail {connection} backgroundReady={true} onclose={()=>{}} onchanged={()=>{}} />{:else}<Documents connectionId="${connectionId}" active={true} approvedResources={['${resourceId}']} />{/if}`
+let savedConnection=$state({...connection,status:'ready',config:{resources:['${resourceId}'],attio:{twoWay:true,includeNotes:true,writableAttributes:{'${objectId}':['${aid.text}']}},route:{mode:'file',folder:'/fixture'},intervalSeconds:300,backfillSince:'2026-01-01T00:00:00.000Z'}});
+</script><nav><button onclick={()=>view='form'}>Test form</button><button onclick={()=>view='setup'}>Test setup</button><button onclick={()=>view='saved'}>Test saved connection</button><button onclick={()=>view='docs'}>Test documents</button></nav>
+{#if view==='form'}<Form connector="attio" oncreated={()=>{}} oncancel={()=>{}} />{:else if view==='setup'}<Detail {connection} backgroundReady={true} onclose={()=>{}} onchanged={()=>{}} />{:else if view==='saved'}<Detail connection={savedConnection} backgroundReady={true} onclose={()=>{}} onchanged={()=>{}} />{:else}<Documents connectionId="${connectionId}" active={true} approvedResources={['${resourceId}']} />{/if}`
   );
   const config = {
     configFile: false,
@@ -479,6 +480,23 @@ const connection={id:'${connectionId}',connector:'attio',label:'Synthetic Attio'
     true
   );
 
+  // The chooser passes a reactive saved object, unlike an empty onboarding draft.
+  // Opening it must retain the nested field selections without cloning a Proxy.
+  connection = {
+    ...connection,
+    status: 'ready',
+    config: {
+      resources: [resourceId],
+      attio: { twoWay: true, includeNotes: true, writableAttributes: { [objectId]: [aid.text] } },
+      route: { mode: 'file', folder: '/fixture' },
+      intervalSeconds: 300,
+      backfillSince: '2026-01-01T00:00:00.000Z'
+    }
+  };
+  await page.getByRole('button', { name: 'Test saved connection', exact: true }).click();
+  await page.getByRole('heading', { name: 'Synthetic Attio', exact: true }).waitFor();
+  assert.equal(await page.getByLabel('Enable two-way Attio ↔ Fulcra sync').isChecked(), true);
+  await page.getByText('1 approved writable fields.', { exact: true }).waitFor();
   assert.deepEqual(errors, []);
   console.log(
     'Attio production UI: setup, typed zero/false/clear/removal, stale draft, pagination, conflict evidence, unavailable-write guards and linked-note source/draft passed.'
