@@ -4,6 +4,8 @@ Connect third-party tools and services directly to your Fulcra data store. Work 
 
 Services you enable here feed your store automatically. You choose the sources, destination, history window and sync frequency. Each copy runs in its owner's Fulcra namespace with its own authentication, credentials and state.
 
+Collection and generated indexes run without an agent. Each instance also publishes a bounded source-discovery manifest so separately installed knowledge tools can find its existing outputs. Read [storage, discovery and knowledge ownership](docs/knowledge-sources.md).
+
 Source: [fulcradynamics/connectors-webapp](https://github.com/fulcradynamics/connectors-webapp). Anyone can fork and submit a PR; Fulcra organization members maintain and merge reviewed changes.
 
 Start with the [reference app](https://connectors.my.fulcra.ai), or fork this repo and deploy at `your-name.my.fulcra.ai`.

@@ -33,3 +33,7 @@ Mixed Notion pages use a complete bounded protected-block projection when Markdo
 Working-file guards query complete published version metadata (uploaded, archived and deleted), accept only one uploaded current head, and retain observed intervening revisions for a third conflict choice. Archived/deleted versions never become current bytes. The accepted editor document remains durable across the verified-file/provider-intent handoff until verified convergence or reviewed conflict. Signed downloads are bounded while streaming, and malformed history fails closed. This is reconciliation with explicit readback, not provider CAS or a cross-service atomic transaction.
 
 Native successor handoffs publish the retained successor run ID before a separate persisted pending-run wake. The wake re-enqueues that same existing run with its stored deployment context and input; it never creates a controller. A failed wake retries independently of successor creation, while running and terminal runs are left alone.
+
+## Optional knowledge discovery
+
+Idle native phases publish bounded per-instance `fulcra.knowledge-sources/1` metadata through retained Files intents and exact readback. Semantic changes, not poll timestamps, produce versions. Metadata backoff yields to ingestion; active jobs retain priority. This introduces no model, external scheduler, database or skill dependency. See [source discovery and independent knowledge ownership](knowledge-sources.md).

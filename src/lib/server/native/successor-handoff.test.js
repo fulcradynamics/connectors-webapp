@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   start: vi.fn(),
   wake: vi.fn(),
   dispose: vi.fn(),
+  sleep: vi.fn(),
   calls: /** @type {string[]} */ ([])
 }));
 // Execute the actual workflow body with controlled collaborators. The normal
@@ -27,7 +28,9 @@ const nativeController = new Function(
     [Symbol.asyncIterator]: () => ({ next: () => new Promise(() => {}) }),
     dispose: mocks.dispose
   }),
-  async () => {},
+  async (duration) => {
+    mocks.sleep(duration);
+  },
   {
     publishState: mocks.publish,
     startSuccessor: mocks.start,
@@ -66,4 +69,33 @@ it('leaves the published pointer intact when the separate wake fails', async () 
     'same-successor'
   );
   expect(mocks.wake).toHaveBeenCalledWith('same-successor');
+});
+
+it('wakes for retained discovery even when all source connections are paused', async () => {
+  const due = Date.now() + 5000;
+  await nativeController(
+    {
+      connections: {},
+      epoch: 0,
+      rolloverRequested: true,
+      grants: { fulcra: { status: 'ready' } },
+      knowledgeSources: { nextDue: due }
+    },
+    'token'
+  );
+  expect(mocks.sleep.mock.calls[0][0]).toBeGreaterThanOrEqual(4000);
+  expect(mocks.sleep.mock.calls[0][0]).toBeLessThanOrEqual(5000);
+});
+it('does not schedule discovery wakeups without background authorization', async () => {
+  await nativeController(
+    {
+      connections: {},
+      epoch: 0,
+      rolloverRequested: true,
+      grants: {},
+      knowledgeSources: { nextDue: 0 }
+    },
+    'token'
+  );
+  expect(mocks.sleep.mock.calls[0][0]).toBeGreaterThanOrEqual(3599000);
 });
