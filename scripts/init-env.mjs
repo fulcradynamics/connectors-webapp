@@ -2,6 +2,7 @@ import { randomUUID, randomBytes } from 'node:crypto';
 import { readFile, writeFile, chmod } from 'node:fs/promises';
 import { parseEnv } from 'node:util';
 import { ownerId, readState } from './lib/fulcra.mjs';
+import { verifyInstanceOwner } from './lib/instance-owner.mjs';
 let source;
 try {
   source = await readFile('.env', 'utf8');
@@ -10,8 +11,9 @@ try {
 }
 const values = parseEnv(source),
   state = await readState();
+const verifiedOwner = verifyInstanceOwner(ownerId(), values.OWNER_USER_ID, state.ownerId);
 const defaults = {
-  OWNER_USER_ID: values.OWNER_USER_ID || ownerId(),
+  OWNER_USER_ID: verifiedOwner,
   HARNESS_DATA_TYPE: state.harnessType || '',
   CONNECTORS_DEPLOYMENT_ID: randomUUID(),
   CREDENTIAL_ENCRYPTION_KEY: randomBytes(32).toString('base64'),

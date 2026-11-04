@@ -1,14 +1,20 @@
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
+import { parseEnv } from 'node:util';
 import { mkdir, writeFile, readFile } from 'node:fs/promises';
 import { createRunEvent, ingestRunEvent } from './lib/harness-events.mjs';
+import { verifyInstanceOwner } from './lib/instance-owner.mjs';
 import { cli, request, readState, saveState, ownerId, verifyRecord, uploadWorkspace } from './lib/fulcra.mjs';
 
 const [command, ...args] = process.argv.slice(2);
 const state = await readState();
 const namespace = 'com.fulcradynamics.connectors.harness.v1';
 if (command === 'init') {
-  state.ownerId ??= ownerId();
+  const configured = await readFile('.env', 'utf8').catch(error => {
+    if (error.code === 'ENOENT') return '';
+    throw error;
+  });
+  state.ownerId = verifyInstanceOwner(ownerId(), parseEnv(configured).OWNER_USER_ID, state.ownerId);
   if (!state.harnessType) {
     const types = await request('/input/v1/data_type');
     const existing = types.filter(x => x.description === namespace && x.api_version === 'v1');

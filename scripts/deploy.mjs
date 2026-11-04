@@ -2,19 +2,23 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { parseEnv } from 'node:util';
 import { deploymentEnvironment } from './lib/deploy-env.mjs';
 import { deployFulcra } from './lib/deploy-fulcra.mjs';
-import { readState, saveState, token } from './lib/fulcra.mjs';
+import { readState, saveState, token, ownerId } from './lib/fulcra.mjs';
+import { verifyInstanceOwner } from './lib/instance-owner.mjs';
 
 const state = await readState();
 const projectName = process.env.FULCRA_PROJECT_NAME || state.project?.name;
 if (!projectName)
   throw Error('Set FULCRA_PROJECT_NAME to your own authorized namespace before first deployment');
 let values = deploymentEnvironment(parseEnv(await readFile('.env', 'utf8')));
+if (!values.OWNER_USER_ID) throw Error('Run init-env before deployment to bind the verified owner');
+verifyInstanceOwner(ownerId(), values.OWNER_USER_ID, state.ownerId);
 async function deploy(values) {
   const result = await deployFulcra({
     name: projectName,
     framework: 'sveltekit',
     expectedDomain: process.env.FULCRA_EXPECTED_DOMAIN || state.project?.domain,
     values,
+    expectedOwnerId: values.OWNER_USER_ID,
     accessToken: token(),
     stateFile: '.private/deployment.json'
   });
