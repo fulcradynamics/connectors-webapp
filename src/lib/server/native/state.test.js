@@ -1,4 +1,4 @@
-import { it, expect } from 'vitest';
+import { it, expect, vi } from 'vitest';
 import { freshState, nativeStore, stage, unstage } from './state.js';
 const options = { key: Buffer.alloc(32, 7).toString('base64'), keyId: 'v1' };
 it('stages source bodies encrypted with contextual expiry', () => {
@@ -101,4 +101,37 @@ it('retains 1000 compact Attio discoveries while enforcing connector-specific bu
     config: {}
   });
   await expect(store.saveResources(other.id, rows)).rejects.toThrow('capacity');
+});
+
+it('serializes the full cache state once while retaining many deduplication tombstones', async () => {
+  const { cacheResult, commandResult } = await import('./state.js');
+  const state = freshState('deployment', 'owner');
+  const at = Date.now();
+  for (let n = 0; n < 200; n++) state.commands['old-' + n] = { at, expired: true };
+  state.commands.stale = { at: at - 86400001, expired: true };
+  state.commands.large = {
+    at,
+    result: stage(state, 'result:large', { text: 'é'.repeat(50000) }, options)
+  };
+  state.resources.padding = 'x'.repeat(2 * 1024 * 1024 - 80000);
+  const stringify = JSON.stringify;
+  let fullStateSerializations = 0;
+  const spy = vi.spyOn(JSON, 'stringify').mockImplementation((value, ...args) => {
+    if (value === state) fullStateSerializations++;
+    return stringify(value, ...args);
+  });
+  try {
+    cacheResult(state, 'current', { httpStatus: 200, body: { status: 'paused' } }, options);
+  } finally {
+    spy.mockRestore();
+  }
+  expect(fullStateSerializations).toBe(1);
+  expect(Buffer.byteLength(JSON.stringify(state))).toBeLessThanOrEqual(2 * 1024 * 1024);
+  expect(state.commands['old-0']).toEqual({ at, expired: true });
+  expect(state.commands.stale).toBeUndefined();
+  expect(state.commands.large).toEqual({ at, expired: true });
+  expect(commandResult(state, 'current', options)).toEqual({
+    httpStatus: 200,
+    body: { status: 'paused' }
+  });
 });

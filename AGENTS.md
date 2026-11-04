@@ -31,3 +31,5 @@ Use the Fulcra app-builder harness when extending a deployed app: record the use
 Prepare PRs against `main`; include supported data, setup, tests and unverified limits. Do not auto-merge contributions, enable collection, publish private data or deploy to another owner's app without authorization.
 
 Notion provider-boundary validation must precede scan completion and protected-block fallback. Reuse `connectors/notion-response.js` for consumed list/page/Markdown contracts; preserve opaque cursors, complete empty pages and unknown-block protection. Failed/malformed reads retain pending obligations and cannot authorize empty writeback or inferred deletion.
+
+Native completed-command caching measures the full serialized state once per cache write and updates its byte budget by exact entry-size differences during eviction. It retains deduplication tombstones until the 24-hour expiry, preserves the current reply when it fits, and keeps the committed-operation error fallback when state remains over budget.
