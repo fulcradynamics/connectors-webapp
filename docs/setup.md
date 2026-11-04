@@ -28,7 +28,7 @@ Use Node 24 for these commands. Stop if a prerequisite is missing; finish instal
 
 ## First deployment
 
-Start in a fresh checkout of your fork using the [current preview checkout instructions](https://github.com/fulcradynamics/connectors-webapp/blob/feat/knowledge-source-discovery/README.md#deploy-your-copy). Copy `.env.example` only on this first setup. Sign into the intended personal or company owner account and inspect `user-info` before continuing:
+Start in a fresh checkout of your fork using the [current checkout instructions](https://github.com/fulcradynamics/connectors-webapp/blob/main/README.md#deploy-your-copy). Copy `.env.example` only on this first setup. Sign into the intended personal or company owner account and inspect `user-info` before continuing:
 
 ```sh
 npm ci

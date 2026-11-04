@@ -30,10 +30,10 @@ These are working example adapters with synthetic tests, not promises to mirror 
 
 Use Git, Node.js 24 with npm, and the [Fulcra CLI](https://pypi.org/project/fulcra-api/) with Python 3.11 or newer. Follow [tool installation and prerequisite checks](docs/setup.md#install-the-tools-first) first; a platform connection or agent skill does not install the CLI.
 
-The hosted template currently previews [PR #5](https://github.com/fulcradynamics/connectors-webapp/pull/5) on `feat/knowledge-source-discovery`, including source discovery and the Attio/Notion/runtime changes from PR #4. Attio is not yet on `main`; `main` remains the reviewed baseline. The command below reproduces the hosted preview. Fork the repository or set your own fork as the push destination to keep and contribute your changes. A fork containing only `main` must fetch this preview branch from upstream first.
+Use the reviewed `main` branch for new installations, including Attio/Notion sync and knowledge discovery. Fork the repository or set your own fork as the push destination to keep and contribute changes. A hosted deployment can lag the source repository: verify its recorded source commit and READY state before claiming it contains a fix.
 
 ```sh
-git clone --branch feat/knowledge-source-discovery https://github.com/fulcradynamics/connectors-webapp.git
+git clone --branch main https://github.com/fulcradynamics/connectors-webapp.git
 cd connectors-webapp
 npm ci
 fulcra-api auth login

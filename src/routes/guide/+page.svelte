@@ -51,7 +51,7 @@
     }
   ];
   const repo =
-    'https://github.com/fulcradynamics/connectors-webapp/blob/feat/knowledge-source-discovery';
+    'https://github.com/fulcradynamics/connectors-webapp/blob/main';
 </script>
 
 <svelte:head
@@ -222,8 +222,8 @@ npm run build</code
       <p>
         Keep your changes on a branch in your fork. Add fixtures and a provider guide, run the
         checks, and open a pull request to the main project’s <code>main</code> branch for review.
-        The hosted preview is published from <code>feat/knowledge-source-discovery</code>; it does
-        not change the contribution target.
+        A deployed instance may lag the source repository; verify its recorded source commit before
+        claiming a fix is live.
       </p>
       <p>
         Include actual test results, setup steps, supported data, known limits and live checks

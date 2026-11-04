@@ -9,10 +9,10 @@ These are project instructions for a coding agent working at its user's request.
 
 ## Get the source and run the real examples
 
-Repository: https://github.com/fulcradynamics/connectors-webapp. The hosted reference currently previews [PR #5](https://github.com/fulcradynamics/connectors-webapp/pull/5) on `feat/knowledge-source-discovery`, including Attio, source discovery, knowledge-maintenance setup and related Notion/runtime work. These preview changes await the required non-author review before `main`. Use this published preview branch to reproduce the hosted examples; `main` remains the reviewed baseline and the target for contributions. Inspect an existing checkout before changing it and keep unrelated work intact. If your fork copied only `main`, fetch the preview branch from the upstream repository before creating your own working branch; keep your own fork as the push destination.
+Repository: https://github.com/fulcradynamics/connectors-webapp. Use `main` for the reviewed connector examples and contributions. Source availability and deployed behavior are separate: verify the existing instance’s recorded source commit and READY state before claiming a fix is live. Inspect a checkout before changing it, preserve unrelated work, and keep the user’s fork as the push destination.
 
 ```sh
-git clone --branch feat/knowledge-source-discovery https://github.com/fulcradynamics/connectors-webapp.git
+git clone --branch main https://github.com/fulcradynamics/connectors-webapp.git
 cd connectors-webapp
 npm ci
 cp .env.example .env # first setup only

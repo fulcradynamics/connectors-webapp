@@ -163,17 +163,12 @@
             them back. Or clone it for a local checkout.
           </p>
           <p class="notice">
-            The source is public and MIT licensed. This site previews
-            <a href={`${repo}/pull/5`}
-              >Source discovery, Attio and related changes awaiting review</a
-            >
-            from
-            <code>feat/knowledge-source-discovery</code>. Use the command below to reproduce this
-            preview;
-            <code>main</code> remains the reviewed baseline.
+            The source is public and MIT licensed. Clone the reviewed <code>main</code> branch
+            for the connector examples and company knowledge setup. Existing deployments choose
+            when to update; verify their recorded source commit before relying on a fix.
           </p>
-          <pre aria-label="Clone and run the preview"><code
-              >git clone --branch feat/knowledge-source-discovery \
+          <pre aria-label="Clone and run the template"><code
+              >git clone --branch main \
   https://github.com/fulcradynamics/connectors-webapp.git
 cd connectors-webapp
 npm ci
