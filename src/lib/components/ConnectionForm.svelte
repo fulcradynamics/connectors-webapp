@@ -47,7 +47,7 @@
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ connector, label, credential })
+          body: JSON.stringify(existing ? { credential } : { connector, label, credential })
         }
       );
       token = '';
@@ -86,7 +86,14 @@
     Enter the secret here. It is encrypted for your deployment and is never shown in the settings
     summary. Verification does not start importing.
   </p>
-  <label>Connection name<input bind:value={label} maxlength="100" required /></label>
+  <label
+    >Connection name<input
+      bind:value={label}
+      maxlength="100"
+      readonly={!!existing}
+      required
+    /></label
+  >
   {#if connector === 'github'}<label
       >Authentication<select bind:value={kind}
         ><option value="token">Read-only fine-grained token</option><option value="github_app"
@@ -103,7 +110,13 @@
       >Private key<textarea bind:value={privateKey} required autocomplete="off" spellcheck="false"
       ></textarea></label
     >{:else}<label
-      >Read token / API key<input
+      >{connector === 'garmin'
+        ? 'Garmin Personal API key'
+        : connector === 'notion'
+          ? 'Internal connection API token'
+          : connector === 'attio'
+            ? 'Attio workspace access token'
+            : 'Read token / API key'}<input
         type="password"
         bind:value={token}
         required
@@ -152,7 +165,8 @@
       </p>
     {:else}<p>
         <strong>Proposed base settings:</strong>
-        {describeInterval(defaults.intervalSeconds)}, a 7-day starting date, and files in
+        {describeInterval(defaults.intervalSeconds)}, a {connector === 'attio' ? 30 : 7}-day
+        starting date, and files in
         <code>{defaults.folder}</code>. Nothing is selected or collecting yet. Change these in the
         next steps.
       </p>{/if}

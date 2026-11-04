@@ -52,6 +52,7 @@ export function nativeStore(state) {
     }
   };
   const store = {
+    supportsTwoWay: true,
     deploymentId: state.deploymentId,
     ownerId: state.ownerId,
     assertOwner: async () => true,
@@ -140,10 +141,27 @@ export function nativeStore(state) {
         }
     },
     saveResources: async (/** @type {string} */ id, /** @type {any[]} */ resources) => {
-      connection(id);
+      const c = connection(id),
+        attio = c.connector === 'attio',
+        now = Date.now();
       const next = { ...(state.resources[id] ?? {}) };
-      for (const resource of resources) next[resource.id] = { ...resource, verifiedAt: Date.now() };
-      if (Object.keys(next).length > 500 || Buffer.byteLength(JSON.stringify(next)) > 64000)
+      if (attio)
+        for (const [key, value] of Object.entries(next))
+          if (value.verifiedAt <= now - 86400000 && !c.config?.resources?.includes(key))
+            delete next[key];
+      for (const resource of resources)
+        next[resource.id] = attio
+          ? {
+              id: resource.id,
+              name: [...String(resource.name ?? resource.id)].slice(0, 48).join(''),
+              kind: 'record',
+              verifiedAt: now
+            }
+          : { ...resource, verifiedAt: now };
+      if (
+        Object.keys(next).length > (attio ? 1200 : 500) ||
+        Buffer.byteLength(JSON.stringify(next)) > (attio ? 384 * 1024 : 64000)
+      )
         throw Error('Discovery capacity exceeded; choose a smaller account scope');
       if (
         Buffer.byteLength(
@@ -220,12 +238,19 @@ export function cacheResult(state, id, result, crypto) {
     };
   state.commands[id] = { at: Date.now(), result: stage(state, 'result:' + id, result, crypto) };
   const entries = Object.entries(state.commands).sort((a, b) => a[1].at - b[1].at);
+  let stateBytes = Buffer.byteLength(JSON.stringify(state));
   for (const [key, entry] of entries) {
-    if (Buffer.byteLength(JSON.stringify(state)) <= 2 * 1024 * 1024) break;
-    if (key !== id && entry.result) state.commands[key] = { at: entry.at, expired: true };
+    if (stateBytes <= 2 * 1024 * 1024) break;
+    if (key !== id && entry.result) {
+      const tombstone = { at: entry.at, expired: true };
+      // Keys and separators are unchanged; only the serialized entry value shrinks.
+      stateBytes -=
+        Buffer.byteLength(JSON.stringify(entry)) - Buffer.byteLength(JSON.stringify(tombstone));
+      state.commands[key] = tombstone;
+    }
   }
   // Keep the current response small if staging consumed the normal result budget.
-  if (Buffer.byteLength(JSON.stringify(state)) > 2 * 1024 * 1024)
+  if (stateBytes > 2 * 1024 * 1024)
     state.commands[id] = {
       at: Date.now(),
       error:

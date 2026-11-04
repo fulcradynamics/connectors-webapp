@@ -28,7 +28,8 @@ async function setup() {
     config: { intervalSeconds: 60 }
   });
   await store.changeGeneration(c.id, 'ready');
-  await store.enqueue(c.id);
+  // Explicitly due despite small host/container clock skew.
+  await store.enqueue(c.id, undefined, new Date(Date.now() - 1000));
   return c;
 }
 test('simultaneous ticks claim a connection only once', async () => {
@@ -118,6 +119,8 @@ test('an unconfirmed or stale preview cannot enable collection; pause and discon
   await assert.rejects(() => enableConnection(store, c.id, false, crypto), /preview/);
   const enabled = await enableConnection(store, c.id, true, crypto);
   assert.equal(enabled.status, 'ready');
+  // Make the fixture due on the database clock before testing lease fencing.
+  await pool.query('UPDATE connector_jobs SET due_at=now() WHERE connection_id=$1', [c.id]);
   const [job] = await store.claimDueJobs(1);
   await store.changeGeneration(c.id, 'paused');
   await assert.rejects(() => store.assertLease(job), /lease/);
@@ -208,7 +211,8 @@ test('scheduling-only configuration changes retain encrypted pending recovery an
     config
   });
   const ready = await store.changeGeneration(c.id, 'ready');
-  await store.enqueue(c.id);
+  // Explicitly due despite small host/container clock skew.
+  await store.enqueue(c.id, undefined, new Date(Date.now() - 1000));
   const [job] = await store.claimDueJobs(1);
   await store.savePending(job, { candidateCheckpoint: { cursor: 'keep' }, outputs: [] });
   const update = configurationUpdate(

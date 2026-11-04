@@ -198,7 +198,8 @@ test('disconnecting background authorization fences every already-running connec
     config: {}
   });
   await store.changeGeneration(connection.id, 'ready');
-  await store.enqueue(connection.id);
+  // Explicitly due despite small host/container clock skew.
+  await store.enqueue(connection.id, undefined, new Date(Date.now() - 1000));
   const [job] = await store.claimDueJobs(1);
   const crypto = { key: Buffer.alloc(32, 9).toString('base64'), keyId: 'integration' };
   await store.saveGrant('fulcra', {
@@ -217,4 +218,41 @@ test('disconnecting background authorization fences every already-running connec
   });
   assert.equal((await store.getConnection(connection.id)).status, 'paused');
   await assert.rejects(() => store.assertLease(job), /lease/);
+});
+
+// Garmin uses the same transaction lock on the alternate PostgreSQL backend.
+test('Garmin personal tokens renew once and keep the long-lived key encrypted', async () => {
+  const { getProviderCredential } = await import('../src/lib/server/credentials.js');
+  const crypto = { key: Buffer.alloc(32, 9).toString('base64'), keyId: 'integration' };
+  const key = 'provider:garmin-fixture',
+    context = `${store.deploymentId}:${store.ownerId}:${key}`;
+  await store.saveGrant(key, {
+    status: 'ready',
+    encrypted: seal(
+      {
+        kind: 'garmin_personal',
+        apiKey: 'synthetic-personal-key',
+        token: 'expired',
+        expiresAt: '2000-01-01T00:00:00Z',
+        accountId: '42',
+        timeZone: 'UTC'
+      },
+      context,
+      crypto
+    )
+  });
+  let exchanges = 0;
+  const fetchImpl = async () => {
+    exchanges++;
+    await new Promise((r) => setTimeout(r, 10));
+    return Response.json({ access_token: 'synthetic-renewed', expires_in: 3600 });
+  };
+  const results = await Promise.all(
+    [1, 2, 3].map(() => getProviderCredential(store, 'garmin-fixture', crypto, { fetchImpl }))
+  );
+  assert.equal(exchanges, 1);
+  assert.ok(results.every((x) => x.token === 'synthetic-renewed' && x.accountId === '42'));
+  const row = await store.getGrant(key);
+  assert.ok(!JSON.stringify(row).includes('synthetic-personal-key'));
+  assert.equal(unseal(row.encrypted, context, crypto).apiKey, 'synthetic-personal-key');
 });

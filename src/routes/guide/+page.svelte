@@ -1,6 +1,13 @@
 <script>
   const providers = [
     {
+      id: 'attio',
+      name: 'Attio',
+      prepare: 'Admin-created workspace token with selected record/optional note scopes',
+      select: 'Exact People/Companies records → approved fields and optional linked notes',
+      pattern: 'Typed two-way edits, preserved rich notes and sharded indexes'
+    },
+    {
       id: 'granola',
       name: 'Granola',
       prepare: 'API key from an eligible account + stable source account ID',
@@ -34,15 +41,23 @@
       prepare: 'Channel read token; suitable user token for threads; optional signing secret',
       select: 'Channels → messages and threads',
       pattern: 'Timestamp identity, rate limits and event-assisted updates'
+    },
+    {
+      id: 'garmin',
+      name: 'Garmin',
+      prepare: 'A Garmin Personal API key for your own account',
+      select: 'Datasets → activities, daily summaries, sleep, heart rate and HRV',
+      pattern: 'Short-lived tokens, calendar dates and historical reconciliation'
     }
   ];
-  const repo = 'https://github.com/ashfulcra/connectors-webapp/blob/feat/connector-template';
+  const repo =
+    'https://github.com/fulcradynamics/connectors-webapp/blob/main';
 </script>
 
 <svelte:head
   ><title>User and agent guides — Fulcra Connectors</title><meta
     name="description"
-    content="Use the five implemented connector examples, hand an agent the build instructions, and contribute another connector for review."
+    content="Use the seven implemented connector examples, hand an agent the build instructions, and contribute another connector for review."
   /></svelte:head
 >
 <div class="guide-page">
@@ -51,7 +66,7 @@
     <p class="eyebrow">Use it. Extend it. Share it.</p>
     <h1>User guide</h1>
     <p class="lead">
-      Five implemented examples bring selected data into your Fulcra folders, v1 data types, or
+      Seven implemented examples bring selected data into your Fulcra folders, v1 data types, or
       both. Each one includes an adapter, source discovery, preview support and runnable tests.
     </p>
     <div class="guide-actions">
@@ -60,15 +75,14 @@
       ><a href="/guides/adding-a-connector.md">Adapter contract ↗</a>
     </div>
     <aside>
-      <strong>Developer preview</strong>
+      <strong>Set up your instance</strong>
       <p>
-        Provider fixtures pass; live account verification is pending. The deployment script
-        initializes native backing and scheduling without a separate database account. If your
-        workspace says “Setup required,” follow the <a href="/guides/setup.md"
+        The deployment script initializes native backing and scheduling without a separate database
+        account. If your workspace says “Setup required,” follow the <a href="/guides/setup.md"
           >current setup guide</a
         >. Use the copyable commands in that guide to create or reuse your namespace, initialize
-        fresh private state, and deploy at your own subdomain. Repository access is currently
-        required to clone the source.
+        fresh private state, and deploy at your own subdomain. The repository is public; anyone can
+        fork it and propose a connector.
       </p>
     </aside>
     <section aria-labelledby="use">
@@ -81,13 +95,14 @@
           <code>[subdomain].my.fulcra.ai</code>. Sign in as its owner.
         </li>
         <li>
-          <strong>Authorize background access.</strong> Under Background sync, choose
-          <strong>Authorize Fulcra</strong>, finish verification and check enrollment. Browser
+          <strong>Authorize background access.</strong> Choose
+          <strong>Allow automatic sync</strong>, finish verification and check enrollment. Browser
           sign-in and background access are separate.
         </li>
         <li>
-          <strong>Connect a service.</strong> Use a provider guide below to prepare its read
-          credential. Enter it in your instance’s protected form and choose
+          <strong>Connect a service.</strong> Use a provider guide below to prepare its credential
+          with the permissions needed for your chosen sync direction. Enter it in your instance’s
+          protected form and choose
           <strong>Verify and continue →</strong>. Never paste credentials into chat or Git.
         </li>
         <li>
@@ -110,10 +125,10 @@
       </ol>
     </section>
     <section aria-labelledby="examples">
-      <h2 id="examples">The five implemented connectors</h2>
+      <h2 id="examples">The implemented connectors</h2>
       <p>
-        Each setup guide explains exact supported data and limits. Code and test links require
-        current repository access.
+        Each setup guide explains exact supported data and limits. Code and test links require the
+        public repository.
       </p>
       <div class="provider-grid">
         {#each providers as provider}<article>
@@ -129,9 +144,10 @@
           </article>{/each}
       </div>
       <p>
-        Notion database rows/comments and GitHub review comments/files are outside these examples.
-        Slack polling alone cannot guarantee old edits/deletions; signed events are needed for those
-        guarantees. Read the provider guides before relying on coverage.
+        Individually selected Notion database-entry pages are supported; database
+        schemas/properties, Notion comments and GitHub review comments/files are outside these
+        examples. Slack polling alone cannot guarantee old edits/deletions; signed events are needed
+        for those guarantees. Read the provider guides before relying on coverage.
       </p>
     </section>
     <section aria-labelledby="build">
@@ -169,7 +185,7 @@ npm run build</code
         ></pre>
       <p>
         Use Node 24+. Example tests run the real adapters against synthetic responses without
-        accounts or a database. They do not establish a verified live integration.
+        accounts or a database.
       </p>
     </section>
     <section aria-labelledby="deploy">
@@ -184,14 +200,30 @@ npm run build</code
         upstream review.
       </p>
     </section>
+    <section aria-labelledby="company">
+      <h2 id="company">Company account and member instances</h2>
+      <p>
+        Use a new company-owned Fulcra account for company imports and the knowledge map. Members
+        can use their existing platform connections or independent personal connector apps and share
+        selected proposals back. Output shares grant reading, not shared app administration or
+        permission to write into Notion or Attio. Provider permissions and copied-data audiences
+        must be reviewed separately.
+      </p>
+      <a
+        href="https://github.com/ashfulcra/fulcra-tools/blob/main/skills/map-our-team/references/setup.md"
+        >Company/member setup, prompts and permission checks ↗</a
+      >
+      <p>
+        <a href="/guides/company-onboarding.md">Connector deployment reference (Markdown) ↗</a>
+      </p>
+    </section>
     <section aria-labelledby="contribute">
       <h2 id="contribute">Contribute for review</h2>
       <p>
         Keep your changes on a branch in your fork. Add fixtures and a provider guide, run the
-        checks, and open a pull request to the main project. During the preview target <code
-          >feat/connector-template</code
-        >
-        for implementation-dependent changes; after release target <code>main</code>.
+        checks, and open a pull request to the main project’s <code>main</code> branch for review.
+        A deployed instance may lag the source repository; verify its recorded source commit before
+        claiming a fix is live.
       </p>
       <p>
         Include actual test results, setup steps, supported data, known limits and live checks

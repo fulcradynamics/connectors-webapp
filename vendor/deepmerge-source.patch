@@ -1,0 +1,27 @@
+--- a/index.js
++++ b/index.js
+@@ -49,3 +49,11 @@
+-	return propertyIsOnObject(target, key) // Properties are safe to merge if they don't exist in the target yet,
+-		&& !(Object.hasOwnProperty.call(target, key) // unsafe if they exist up the prototype chain,
+-			&& Object.propertyIsEnumerable.call(target, key)) // and also unsafe if they're nonenumerable.
++	if (key === '__proto__' || key === 'constructor' || key === 'prototype') return true;
++	if (target === null || (typeof target !== 'object' && typeof target !== 'function')) return false;
++	try {
++		return key in target && !(Object.hasOwnProperty.call(target, key) && Object.propertyIsEnumerable.call(target, key));
++	} catch (_) {
++		return true;
++	}
++}
++
++function setOwn(object, key, value) {
++	Object.defineProperty(object, key, {value: value, writable: true, enumerable: true, configurable: true});
+@@ -58 +66,2 @@
+-			destination[key] = cloneUnlessOtherwiseSpecified(target[key], options)
++			if (propertyIsUnsafe(target, key)) return;
++			setOwn(destination, key, cloneUnlessOtherwiseSpecified(target[key], options))
+@@ -67 +76 @@
+-			destination[key] = getMergeFunction(key, options)(target[key], source[key], options)
++			setOwn(destination, key, getMergeFunction(key, options)(target[key], source[key], options))
+@@ -69 +78 @@
+-			destination[key] = cloneUnlessOtherwiseSpecified(source[key], options)
++			setOwn(destination, key, cloneUnlessOtherwiseSpecified(source[key], options))

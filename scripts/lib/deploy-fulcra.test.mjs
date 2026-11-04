@@ -27,6 +27,8 @@ function fixture() {
     project,
     async fetchImpl(url, options = {}) {
       calls.push({ url, ...options });
+      if (url.endsWith('/user/v1alpha1/info'))
+        return Response.json({ userid: '00000000-0000-4000-8000-000000000001' });
       if (url.endsWith('/user/v1/deploy/project')) {
         assert.notEqual(options.method, 'POST', 'parked namespace must be reused');
         return Response.json([project]);
@@ -62,6 +64,7 @@ if (module.deployFulcra) {
         expectedDomain: 'sample.my.fulcra.ai',
         values: { PUBLIC_AUTH0_DOMAIN: 'auth.example', SECRET: 'never-build' },
         accessToken: 'fulcra-secret',
+        expectedOwnerId: '00000000-0000-4000-8000-000000000001',
         fetchImpl: f.fetchImpl,
         run: async (args, env) => {
           const saved = JSON.parse(await readFile(join(cwd, '.private/fulcra-deployment.json')));
@@ -72,6 +75,8 @@ if (module.deployFulcra) {
         }
       });
       const patch = JSON.parse(f.calls.find((x) => x.method === 'PATCH').body);
+      assert.equal(f.calls[0].url, 'https://api.fulcradynamics.com/user/v1alpha1/info');
+      assert.equal(f.calls[0].headers.Authorization, 'Bearer fulcra-secret');
       assert.equal(patch.framework, 'sveltekit');
       assert.equal(patch.buildCommand, 'npm run build');
       assert.equal(patch.outputDirectory, null);

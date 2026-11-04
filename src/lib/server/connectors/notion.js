@@ -1,4 +1,6 @@
+import { createNotionPages } from '../notion-sync/notion.js';
 import { providerHTTP, rateAware, selectedResources } from './http.js';
+import { notionList, notionPage } from './notion-response.js';
 const version = '2026-03-11';
 /** @param {any[]} rich */
 const text = (rich) => (rich ?? []).map((t) => t.plain_text ?? t.text?.content ?? '').join('');
@@ -7,7 +9,7 @@ export function renderBlock(block) {
   const type = block.type,
     data = block[type] ?? {},
     value = text(data.rich_text);
-  if (type.startsWith('heading_')) return '#'.repeat(Number(type.slice(-1))) + ' ' + value;
+  if (/^heading_[1-3]$/.test(type)) return '#'.repeat(Number(type.slice(-1))) + ' ' + value;
   if (
     [
       'paragraph',
@@ -53,8 +55,9 @@ export function createNotion({ fetchImpl = fetch } = {}) {
         ...(cursor ? { start_cursor: cursor } : {})
       })
     });
+    const list = notionList(data, cursor, 'page');
     return {
-      resources: data.results.map((/** @type {any} */ p) => ({
+      resources: list.results.map((/** @type {any} */ p) => ({
         id: p.id,
         name:
           text(
@@ -63,7 +66,7 @@ export function createNotion({ fetchImpl = fetch } = {}) {
           ) || p.id,
         kind: 'page'
       })),
-      nextCursor: data.has_more ? data.next_cursor : null
+      nextCursor: list.cursor
     };
   }
   /** @param {any} input */
@@ -90,12 +93,14 @@ export function createNotion({ fetchImpl = fetch } = {}) {
       if (!cp.frontier?.length) {
         const response = await req('pages/' + encodeURIComponent(root), {}, [404]);
         if (response.status === 404) return lost();
+        notionPage(response.data, root);
         cp.root = root;
         cp.page = response.data;
         cp.blocks = [];
         cp.frontier = [{ id: root, cursor: null }];
         cp.seen = [];
       }
+      notionPage(cp.page, root);
       const current = cp.frontier.shift();
       const query = new URLSearchParams({ page_size: '50' });
       if (current.cursor) query.set('start_cursor', current.cursor);
@@ -106,13 +111,21 @@ export function createNotion({ fetchImpl = fetch } = {}) {
       );
       if (response.status === 404) return lost();
       const data = response.data;
-      for (const block of data.results) {
+      const list = notionList(data, current.cursor, 'block', current.cursors ?? []);
+      for (const block of list.results) {
+        if (typeof block.has_children !== 'boolean')
+          throw Error('Invalid Notion block children response');
         if (cp.seen.includes(block.id)) continue;
         cp.seen.push(block.id);
         cp.blocks.push({ parentId: current.id, block });
         if (block.has_children) cp.frontier.push({ id: block.id, cursor: null });
       }
-      if (data.has_more) cp.frontier.unshift({ id: current.id, cursor: data.next_cursor });
+      if (list.cursor)
+        cp.frontier.unshift({
+          id: current.id,
+          cursor: list.cursor,
+          cursors: [...(current.cursors ?? []), list.cursor]
+        });
       if (cp.blocks.length > 5000 || JSON.stringify(cp).length > 2_000_000)
         throw new Error('Notion traversal exceeds configured bound; select smaller roots');
       if (cp.frontier.length) return { changes: [], candidateCheckpoint: cp, continuation: true };
@@ -156,6 +169,7 @@ export function createNotion({ fetchImpl = fetch } = {}) {
   return {
     listResources,
     readPage,
+    readDocument: createNotionPages({ fetchImpl }).read,
     validate: async (/** @type {any} */ credential) => {
       const { data } = await http(credential, Date.now() + 10000)('users/me');
       return { accountId: data.bot?.workspace_name ? data.id : data.id };

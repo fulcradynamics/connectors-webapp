@@ -7,6 +7,7 @@ import * as connection from '../../../routes/api/connections/[id]/+server.js';
 import * as resources from '../../../routes/api/connections/[id]/resources/+server.js';
 import * as action from '../../../routes/api/connections/[id]/action/+server.js';
 import * as credentials from '../../../routes/api/connections/[id]/credentials/+server.js';
+import * as documents from '../../../routes/api/connections/[id]/documents/+server.js';
 import * as preview from '../../../routes/api/preview/+server.js';
 import * as backgroundStart from '../../../routes/api/background-auth/start/+server.js';
 import * as backgroundComplete from '../../../routes/api/background-auth/complete/+server.js';
@@ -25,13 +26,13 @@ export function commandRoute(path, method) {
   let module = exact[path],
     params = {};
   const match = path.match(
-    /^\/api\/connections\/([a-f0-9-]{36})(?:\/(resources|action|credentials))?$/i
+    /^\/api\/connections\/([a-f0-9-]{36})(?:\/(resources|action|credentials|documents))?$/i
   );
   if (match) {
     params = { id: match[1] };
     module =
-      { resources, action, credentials }[
-        /** @type {'resources'|'action'|'credentials'} */ (match[2])
+      { resources, action, credentials, documents }[
+        /** @type {'resources'|'action'|'credentials'|'documents'} */ (match[2])
       ] ?? connection;
   }
   const hook = path.match(/^\/api\/webhooks\/(slack|github|granola)\/([a-f0-9-]{36})$/i);

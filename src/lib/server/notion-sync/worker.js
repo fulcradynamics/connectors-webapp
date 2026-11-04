@@ -1,0 +1,947 @@
+import { isManaged, validateManagedEdit, planManagedEdit } from '../../notion-managed.js';
+import { prepareIndex, advanceIndex, indexStatusView } from './index.js';
+import { retainArchivedBody } from './archive-body.js';
+import { randomUUID } from 'node:crypto';
+import { nativeStore } from '../native/state.js';
+import { createNotionPages, markerTitle, pageId, assertNotionPageScope } from './notion.js';
+import { loadManifest, saveManifest, workingFolder } from './state.js';
+import { encodeDocument, decodeDocument, documentHash, decideSync } from './document.js';
+import { contentHash } from '../sync/identity.js';
+/** @param {any} e */
+const filePath = (e) => e.folder + '/' + e.localId + '.md';
+/** Only bounded representation failures are skippable; transport errors remain retryable.
+ * @param {any} cause */
+const invalidFileRead = (cause) =>
+  cause?.code === 'ERR_ENCODING_INVALID_ENCODED_DATA' ||
+  cause?.message === 'Working-file content exceeds bound';
+/** An accepted editor body stays durable until explicit reviewed conflict resolution.
+ * @param {any} entry @param {any} document */
+function holdEdit(entry, document) {
+  entry.recoveryEdit = { ...entry.recoveryEdit, document };
+  entry.status = 'recovery_pending';
+  entry.error =
+    'Saved editor text is retained. When source access and a valid working copy are available, sync to review the conflict.';
+}
+/** Preserve a distinct current working version alongside the accepted document, including unreadable bytes.
+ * @param {any} entry @param {any} file */
+function retainWorkingVersion(entry, file) {
+  if (!entry.recoveryEdit || !file?.id) return;
+  try {
+    if (documentHash(decodeDocument(file.content)) === documentHash(entry.recoveryEdit.document))
+      return;
+  } catch {
+    // The server-owned ID remains reviewable even when its bytes cannot be decoded now.
+  }
+  entry.recoveryEdit.interveningFileIds = [
+    ...new Set(
+      [
+        ...(entry.recoveryEdit.interveningFileIds ?? []),
+        entry.recoveryEdit.interveningFileId,
+        file.id
+      ].filter(Boolean)
+    )
+  ];
+  entry.recoveryEdit.interveningFileId = file.id;
+}
+/** Transfer the durable handoff/provider obligation into explicit recovery before clearing its intent.
+ * @param {any} entry @param {any} file @param {any} document */
+function recoverAcceptedEdit(entry, file = null, document = null) {
+  const accepted = document ?? entry.acceptedEdit?.document ?? entry.recoveryEdit?.document;
+  if (!accepted) return false;
+  entry.recoveryEdit = { ...entry.acceptedEdit, ...entry.recoveryEdit, document: accepted };
+  holdEdit(entry, accepted);
+  retainWorkingVersion(entry, file);
+  delete entry.acceptedEdit;
+  return true;
+}
+/** @param {any} connection @param {any} entry */
+function allowed(connection, entry) {
+  return entry.origin === 'selected'
+    ? connection.config.resources.includes(entry.notionId)
+    : entry.parentId === connection.config.twoWay.parentId;
+}
+/** @param {any} m @param {any} entry */
+function finish(m, entry) {
+  m.pending = null;
+  m.priority = m.priority.filter((/** @type {string} */ id) => id !== entry.localId);
+  const ids = Object.keys(m.entries);
+  m.index = (ids.indexOf(entry.localId) + 1) % Math.max(1, ids.length);
+  if (m.index === 0) {
+    m.lastCycle = new Date().toISOString();
+    m.scan = 'pages';
+    m.indexCheckRequested = true;
+  }
+}
+/** @param {any} m @param {any} entry @param {any} notion @param {any} fulcra @param {any} currentFulcra */
+function conflict(m, entry, notion, fulcra, currentFulcra = fulcra) {
+  const id = randomUUID();
+  entry.status = 'conflict_pending';
+  m.pending = {
+    kind: 'conflict',
+    entryId: entry.localId,
+    id,
+    phase: 'start',
+    index: 0,
+    snapshots: [notion, fulcra],
+    expectedCurrent: { notion: documentHash(notion), fulcra: documentHash(currentFulcra) },
+    paths: [],
+    receipt: null
+  };
+}
+/** @param {any} m @param {any} entry @param {any} doc @param {any} file @param {string} purpose @param {any} extra */
+function fileIntent(m, entry, doc, file, purpose, extra = {}) {
+  if (purpose !== 'conflict-snapshot') entry.status = 'pending';
+  m.pending = {
+    kind: 'file',
+    entryId: entry.localId,
+    purpose,
+    phase: 'guard',
+    path: filePath(entry),
+    content: encodeDocument(doc),
+    document: doc,
+    beforeId: file?.id ?? null,
+    beforeVersions: file?.versions?.map((/** @type {any} */ v) => v.id) ?? [],
+    receipt: null,
+    ...extra
+  };
+}
+/** @param {any} entry @param {any} notion @param {any} fulcra @param {any} file */
+function converged(entry, notion, fulcra, file) {
+  const next = { notion: documentHash(notion), fulcra: documentHash(fulcra) };
+  if (
+    !entry.contentUpdatedAt ||
+    entry.baseline?.notion !== next.notion ||
+    entry.baseline?.fulcra !== next.fulcra ||
+    entry.baselineFileId !== file.id
+  )
+    entry.contentUpdatedAt = new Date().toISOString();
+  entry.baseline = next;
+  entry.fileId = file.id;
+  entry.baselineFileId = file.id;
+  entry.title = fulcra.title;
+  entry.archived = fulcra.archived;
+  entry.status = 'synced';
+  entry.lastVerified = new Date().toISOString();
+  delete entry.conflict;
+  delete entry.error;
+  delete entry.createdPending;
+  delete entry.recoveryEdit;
+  delete entry.acceptedEdit;
+}
+/** @param {any} m @param {any} entry @param {string} id */
+function bindCreated(m, entry, id) {
+  id = pageId(id);
+  if (
+    Object.values(m.entries).some(
+      (/** @type {any} */ e) => e.localId !== entry.localId && e.notionId === id
+    )
+  )
+    throw Error('Two-way mapping scope collision requires inspection');
+  entry.notionId = id;
+  entry.createdPending = true;
+  entry.status = 'pending';
+  delete entry.deferred;
+}
+/** Advance one bounded persisted phase. The controller publishes the returned state before another call.
+ * @param {any} state @param {any} connection @param {any} dependencies */
+export async function advanceNotionSync(
+  state,
+  connection,
+  { crypto, client, provider, notion = createNotionPages() }
+) {
+  const store = nativeStore(state),
+    folder = workingFolder(connection);
+  const m = await loadManifest(store, connection, crypto);
+  for (const e of Object.values(m.entries)) /** @type {any} */ (e).folder = folder;
+  let keepActive = false;
+  let retryDelay = 15000;
+  let currentEntryId = m.pending?.entryId ?? null;
+  let currentFile = /** @type {any} */ (null);
+  m.discoveryWarnings ??= [];
+  const readRemote = async (/** @type {any} */ entry, /** @type {any} */ credential) => {
+    const remote = await notion.read(
+      entry.notionId,
+      credential,
+      undefined,
+      entry.origin === 'selected' ? null : connection.config.twoWay.parentId
+    );
+    assertNotionPageScope(connection, entry, remote);
+    return retainArchivedBody(remote, entry, client, m.pending);
+  };
+  const warn = (/** @type {string} */ message) => {
+    if (!m.discoveryWarnings.includes(message))
+      m.discoveryWarnings = [...m.discoveryWarnings, message].slice(-10);
+  };
+  /** @param {boolean} active */
+  async function persistPhase(active) {
+    connection.twoWayStatus = {
+      folder,
+      mapped: Object.keys(m.entries).length,
+      synced: Object.values(m.entries).filter((/** @type {any} */ e) => e.status === 'synced')
+        .length,
+      conflicts: Object.values(m.entries).filter((/** @type {any} */ e) =>
+        e.status.startsWith('conflict')
+      ).length,
+      phase: m.pending
+        ? m.pending.kind + ':' + m.pending.phase
+        : m.indexPending
+          ? 'index:' + m.indexPending.phase
+          : (m.scan ?? 'scan'),
+      index: indexStatusView(connection, m),
+      lastCycle: m.lastCycle
+    };
+    await saveManifest(store, connection, m, crypto);
+    if (active)
+      state.active = {
+        connectionId: connection.id,
+        generation: connection.generation,
+        phase: 'notion-two-way'
+      };
+    else {
+      state.active = null;
+      connection.nextDue =
+        Date.now() +
+        (connection.lastError
+          ? retryDelay
+          : m.scan || m.priority.length || m.index
+            ? 1000
+            : connection.config.intervalSeconds * 1000);
+    }
+    if (!active && (m.indexPending || m.indexStatus?.state === 'retry'))
+      connection.nextDue = Math.min(
+        connection.nextDue,
+        Math.max(Date.now() + 1000, m.indexRetryAt ?? 0)
+      );
+    return state;
+  }
+  if (
+    !m.pending &&
+    !Object.keys(m.queue).length &&
+    !m.priority.length &&
+    !m.indexYield &&
+    m.indexPending &&
+    (m.indexRetryAt ?? 0) <= Date.now()
+  ) {
+    try {
+      const pending = await advanceIndex(m, connection, client);
+      return await persistPhase(pending);
+    } catch {
+      m.indexStatus = {
+        ...m.indexStatus,
+        state: 'retry',
+        error: 'Index publication retry pending; working page synchronization continues.'
+      };
+      m.indexRetryAt = Date.now() + 30000;
+      m.indexYield = true;
+      return persistPhase(false);
+    }
+  }
+  // Even if an index retry is due before the next page interval, give ordinary
+  // polling a turn after a failed publication. Keep this fairness marker durable.
+  delete m.indexYield;
+  /** @param {any} p */
+  async function writePhase(p) {
+    const observation = client.fileState
+      ? await client.fileState(p.path)
+      : { file: await client.latestFile(p.path) };
+    const latest = observation.file,
+      versions = observation.versions ?? latest?.versions ?? [];
+    const changedHistory = () => {
+      const known = new Set(p.beforeVersions),
+        deleted = new Set(p.beforeDeletedIds ?? []);
+      const changed = versions.filter(
+        (/** @type {any} */ v) =>
+          v.id !== p.receipt?.inputId &&
+          !(v.state === 'deleted' && v.uploaded_at === null) &&
+          (!known.has(v.id) || (v.state === 'deleted' && !deleted.has(v.id)))
+      );
+      if (changed.length) {
+        p.interveningFileId = changed[0].id;
+        p.interveningFileIds = changed.map((/** @type {any} */ v) => v.id);
+      }
+      return changed.length > 0;
+    };
+    if (p.phase === 'guard') {
+      if ((latest?.id ?? null) !== p.beforeId) {
+        changedHistory();
+        return 'changed';
+      }
+      // Capture the complete published history before our first allocation. Old
+      // intents that have not allocated yet can safely acquire this baseline.
+      p.beforeVersions = versions.map((/** @type {any} */ v) => v.id);
+      p.beforeDeletedIds = versions
+        .filter((/** @type {any} */ v) => v.state === 'deleted')
+        .map((/** @type {any} */ v) => v.id);
+      p.phase = 'allocate';
+      return 'pending';
+    }
+    if (p.phase === 'allocate') {
+      // Guard again after the durable intent, immediately before allocating a new version.
+      if ((latest?.id ?? null) !== p.beforeId) {
+        changedHistory();
+        return 'changed';
+      }
+      const upload = await client.allocateFile(p.path, p.content, 'text/markdown');
+      p.receipt = { inputId: upload.file.id, transfer: { url: upload.url } };
+      p.phase = 'transfer';
+      return 'pending';
+    }
+    if (p.phase === 'transfer') {
+      const ours = versions.find((/** @type {any} */ v) => v.id === p.receipt.inputId);
+      if (ours?.state === 'deleted') {
+        changedHistory();
+        return 'changed';
+      }
+      if (ours) p.phase = 'verify';
+      else {
+        // A later head must survive even if it arrived after allocation.
+        const intervening = changedHistory();
+        if ((latest?.id ?? null) !== p.beforeId || intervening) return 'changed';
+        await client.transferFile(p.receipt.transfer, p.content, 'text/markdown');
+        p.phase = 'verify';
+      }
+      return 'pending';
+    }
+    if (changedHistory()) return 'changed';
+    const ours = versions.find((/** @type {any} */ v) => v.id === p.receipt.inputId);
+    if (ours?.state === 'deleted') return 'changed';
+    if (!latest || !ours) return (latest?.id ?? null) !== p.beforeId ? 'changed' : 'pending';
+    if (latest.id !== p.receipt.inputId || contentHash(latest.content) !== contentHash(p.content))
+      return 'changed';
+    p.file = latest;
+    return 'verified';
+  }
+  try {
+    const credential = await provider(connection);
+    let p = m.pending,
+      entry = p ? m.entries[p.entryId] : null;
+    if (entry && !allowed(connection, entry)) throw Error('Two-way scope configuration mismatch');
+    if (p?.kind === 'file') {
+      const result = await writePhase(p);
+      if (result === 'changed') {
+        if (p.purpose === 'conflict-snapshot')
+          throw Error('Conflict evidence changed; inspect working files');
+        if (p.purpose === 'edit') {
+          holdEdit(entry, p.document);
+          if (p.interveningFileId) {
+            entry.recoveryEdit.interveningFileId = p.interveningFileId;
+            entry.recoveryEdit.interveningFileIds = p.interveningFileIds ?? [p.interveningFileId];
+          }
+          delete m.queue[entry.localId];
+          finish(m, entry);
+        } else {
+          const local = await client.latestFile(filePath(entry));
+          const remote = entry.notionId ? await readRemote(entry, credential) : null;
+          if (remote?.supported && local) {
+            const retained =
+              p.interveningFileId && p.interveningFileId !== local.id
+                ? new TextDecoder('utf-8', { fatal: true }).decode(
+                    await client.readFileBytes(p.interveningFileId, 64 * 1024)
+                  )
+                : local.content;
+            conflict(
+              m,
+              entry,
+              remote.document,
+              decodeDocument(retained),
+              decodeDocument(local.content)
+            );
+          } else {
+            entry.status = 'edit_stale';
+            entry.error = 'Working file changed before delivery';
+            finish(m, entry);
+          }
+        }
+      } else if (result === 'verified') {
+        if (p.purpose === 'edit') {
+          entry.fileId = p.file.id;
+          entry.status = 'pending';
+          // The accepted document stays an obligation across this persisted
+          // handoff, even before a provider intent has been created.
+          entry.acceptedEdit = { document: p.document, fileId: p.file.id };
+          delete m.queue[entry.localId];
+          m.pending = null;
+          m.priority.unshift(entry.localId);
+        } else if (p.purpose === 'conflict-snapshot') {
+          m.pending = p.continuation;
+          m.pending.paths.push({ path: p.path, hash: contentHash(p.content), fileId: p.file.id });
+          m.pending.index++;
+        } else {
+          converged(entry, p.notionDocument ?? p.document, p.document, p.file);
+          connection.lastDelivery = entry.lastVerified;
+          connection.lastVerified = entry.lastVerified;
+          finish(m, entry);
+        }
+      }
+      keepActive = !!m.pending;
+    } else if (p?.kind === 'conflict') {
+      if (p.index < 2) {
+        fileIntent(m, entry, p.snapshots[p.index], null, 'conflict-snapshot', {
+          path: `${folder}/.conflicts/${p.id}/${p.index === 0 ? 'notion' : 'fulcra'}.md`,
+          continuation: p
+        });
+      } else {
+        entry.status = 'conflict';
+        entry.conflict = {
+          id: p.id,
+          paths: p.paths,
+          detectedAt: new Date().toISOString(),
+          expectedCurrent: p.expectedCurrent
+        };
+        finish(m, entry);
+      }
+      keepActive = !!m.pending;
+    } else if (p?.kind === 'create') {
+      if (p.phase === 'create') {
+        // This separate, retained guard makes a restarted apply recover, never send another POST.
+        const guardPath = `${folder}/.sync/create/${entry.localId}.json`;
+        const existing = await client.latestFile(guardPath);
+        if (
+          p.createCallStarted ||
+          (existing && JSON.parse(existing.content).attempt === (p.attemptId ?? p.operationId))
+        )
+          p.phase = 'recover';
+        else {
+          const sourceStillAccepted = async () => {
+            const expected = entry.acceptedEdit?.document ?? p.document;
+            if (!expected) return true;
+            const current = await client.latestFile(filePath(entry));
+            currentFile = current;
+            let matches = false;
+            try {
+              matches =
+                !!current &&
+                documentHash(decodeDocument(current.content)) === documentHash(expected);
+            } catch {
+              /* Retain invalid current bytes by ID. */
+            }
+            if (matches) return true;
+            recoverAcceptedEdit(entry, current, expected);
+            finish(m, entry);
+            return false;
+          };
+          if (await sourceStillAccepted()) {
+            const guard = JSON.stringify({
+              operation: p.operationId,
+              attempt: p.attemptId ?? p.operationId,
+              localId: entry.localId,
+              parentId: entry.parentId
+            });
+            await client.uploadFile(guardPath, guard, 'application/json');
+            const proof = await client.latestFile(guardPath);
+            if (!proof || proof.content !== guard) throw Error('Creation guard readback pending');
+            if (await sourceStillAccepted()) {
+              p.createCallStarted = true;
+              const created = await notion.createMarker(entry.parentId, entry.localId, credential);
+              bindCreated(m, entry, created.id);
+              m.pending = null;
+              m.priority.unshift(entry.localId);
+            }
+          }
+        }
+      } else {
+        const children = await notion.children(
+          entry.parentId,
+          credential,
+          p.cursor ?? null,
+          Date.now() + 25000,
+          p.cursors ?? []
+        );
+        const matches = children.pages.filter(
+          (/** @type {any} */ child) => child.title === markerTitle(entry.localId)
+        );
+        if (matches.length > 1)
+          throw Error('Multiple creation recovery markers require inspection');
+        if (matches.length) {
+          bindCreated(m, entry, matches[0].id);
+          m.pending = null;
+          m.priority.unshift(entry.localId);
+        } else {
+          p.cursor = children.cursor;
+          p.cursors = children.cursor ? [...(p.cursors ?? []), children.cursor] : [];
+          entry.status = 'creation_uncertain';
+          if (!children.cursor) {
+            p.cursor = null;
+            entry.error = 'Creation outcome uncertain; recovering marker without a duplicate POST';
+          }
+          entry.deferred = p;
+          finish(m, entry);
+        }
+      }
+      keepActive = !!m.pending;
+    } else if (p?.kind === 'notion') {
+      const file = await client.latestFile(filePath(entry));
+      currentFile = file;
+      const remote = await readRemote(entry, credential);
+      if (!remote.supported) {
+        recoverAcceptedEdit(entry, file, p.desired);
+        finish(m, entry);
+      } else {
+        const actual = remote.document,
+          desired = p.desired;
+        // No later local edit may be mistaken for the version this intent is sending.
+        if (!file || documentHash(decodeDocument(file.content)) !== p.sourceHash) {
+          recoverAcceptedEdit(entry, file, desired);
+          if (file) conflict(m, entry, actual, desired, decodeDocument(file.content));
+          else {
+            finish(m, entry);
+          }
+        } else {
+          const expected = p.expected;
+          if (isManaged(expected.markdown) || isManaged(desired.markdown))
+            validateManagedEdit(expected.markdown, desired.markdown);
+          if (isManaged(actual.markdown) && !remote.managed && !remote.bodyUnavailable)
+            throw Error('Invalid managed provider projection');
+          const same = (/** @type {any} */ a, /** @type {any} */ b) =>
+            documentHash(a) === documentHash(b);
+          let recognized = same(actual, expected);
+          // Reconcile a committed write whose response/step result was lost.
+          if (
+            !recognized &&
+            p.phase === 'title' &&
+            same(actual, { ...expected, title: desired.title })
+          ) {
+            p.expected = { ...expected, title: desired.title };
+            recognized = true;
+          }
+          if (
+            !recognized &&
+            p.phase === 'body' &&
+            same(actual, { ...expected, markdown: desired.markdown })
+          ) {
+            p.expected = { ...expected, markdown: desired.markdown };
+            recognized = true;
+          }
+          if (!recognized && p.phase === 'body' && isManaged(expected.markdown)) {
+            const next = planManagedEdit(expected.markdown, desired.markdown);
+            if (next && same(actual, { ...expected, markdown: next.intermediate })) {
+              p.expected = { ...expected, markdown: next.intermediate };
+              recognized = true;
+            }
+          }
+          if (
+            !recognized &&
+            ['restore', 'archive'].includes(p.phase) &&
+            same(actual, {
+              ...expected,
+              archived: p.phase === 'archive' ? desired.archived : false
+            })
+          ) {
+            p.expected = { ...expected, archived: actual.archived };
+            recognized = true;
+          }
+          if (!recognized) {
+            recoverAcceptedEdit(entry, file, desired);
+            conflict(m, entry, actual, desired, decodeDocument(file.content));
+          } else if (p.phase === 'guard') p.phase = 'restore';
+          else if (p.phase === 'restore') {
+            if (
+              p.expected.archived &&
+              (!desired.archived ||
+                p.expected.markdown !== desired.markdown ||
+                p.expected.title !== desired.title)
+            ) {
+              await notion.setArchived(entry.notionId, false, credential);
+              p.expected.archived = false;
+            }
+            p.phase = 'title';
+          } else if (p.phase === 'title') {
+            if (p.expected.title !== desired.title) {
+              await notion.setTitle(
+                entry.notionId,
+                remote.titleProperty,
+                desired.title,
+                credential
+              );
+              p.expected.title = desired.title;
+            }
+            p.phase = 'body';
+          } else if (p.phase === 'body') {
+            if (p.expected.markdown !== desired.markdown)
+              p.expected.markdown = await notion.setBody(
+                entry.notionId,
+                p.expected.markdown,
+                desired.markdown,
+                credential,
+                undefined,
+                remote
+              );
+            if (
+              p.expected.markdown === desired.markdown ||
+              (isManaged(p.expected.markdown) &&
+                !planManagedEdit(p.expected.markdown, desired.markdown))
+            )
+              p.phase = 'archive';
+          } else if (p.phase === 'archive') {
+            if (p.expected.archived !== desired.archived) {
+              await notion.setArchived(entry.notionId, desired.archived, credential);
+              p.expected.archived = desired.archived;
+            }
+            p.phase = 'verify';
+          } else {
+            if (same(actual, desired)) {
+              converged(entry, actual, decodeDocument(file.content), file);
+              connection.lastVerified = entry.lastVerified;
+              connection.lastDelivery = entry.lastVerified;
+              finish(m, entry);
+            } else fileIntent(m, entry, actual, file, 'push-canonical', { notionDocument: actual });
+          }
+        }
+      }
+      keepActive = !!m.pending;
+    } else if (Object.keys(m.queue).length) {
+      const id = Object.keys(m.queue)[0],
+        edit = m.queue[id],
+        e = m.entries[id];
+      let current,
+        unreadable = false;
+      try {
+        current = await client.latestFile(filePath(e));
+      } catch (cause) {
+        if (!invalidFileRead(cause)) throw cause;
+        holdEdit(e, edit.document);
+        delete m.queue[id];
+        finish(m, e);
+        unreadable = true;
+      }
+      if (unreadable) {
+        /* The accepted text is held until valid bytes can be reviewed. */
+      } else if ((current?.id ?? null) !== edit.expectedRevision) {
+        holdEdit(e, edit.document);
+        retainWorkingVersion(e, current);
+        delete m.queue[id];
+        finish(m, e);
+      } else fileIntent(m, e, edit.document, current, 'edit');
+      keepActive = !!m.pending;
+    } else if (m.scanRequested || m.scan) {
+      if (m.scanRequested) {
+        m.scan = 'pages';
+        m.scanCursor = null;
+        m.scanCursors = [];
+        m.scanRequested = false;
+      }
+      if (m.scan === 'pages') {
+        const children = await notion.children(
+          connection.config.twoWay.parentId,
+          credential,
+          m.scanCursor,
+          Date.now() + 25000,
+          m.scanCursors ?? []
+        );
+        for (const child of children.pages) {
+          if (Object.values(m.entries).some((/** @type {any} */ e) => e.notionId === child.id))
+            continue;
+          const recovering = Object.values(m.entries).find(
+            (/** @type {any} */ e) =>
+              e.origin === 'local' &&
+              !e.notionId &&
+              e.parentId === connection.config.twoWay.parentId &&
+              markerTitle(e.localId) === child.title
+          );
+          if (recovering) {
+            bindCreated(m, recovering, child.id);
+            m.priority.push(/** @type {any} */ (recovering).localId);
+            continue;
+          }
+          if (Object.keys(m.entries).length >= 50) {
+            warn('Mapped-page limit reached; extra Notion children were skipped');
+            continue;
+          }
+          const localId = pageId(child.id);
+          m.entries[localId] = {
+            localId,
+            notionId: child.id,
+            folder,
+            parentId: connection.config.twoWay.parentId,
+            origin: 'child',
+            status: 'pending'
+          };
+          m.priority.push(localId);
+        }
+        m.scanCursor = children.cursor;
+        m.scanCursors = children.cursor ? [...(m.scanCursors ?? []), children.cursor] : [];
+        if (!children.cursor) m.scan = 'files';
+      } else {
+        const files = await client.listFiles(folder);
+        const latest = new Map();
+        for (const f of files.sort(
+          (/** @type {any} */ a, /** @type {any} */ b) =>
+            Date.parse(b.created_at) - Date.parse(a.created_at)
+        ))
+          if (!latest.has(f.name)) latest.set(f.name, f);
+        for (const [name, f] of latest) {
+          if (!/^[a-f0-9-]{36}\.md$/i.test(name)) continue;
+          let id;
+          try {
+            id = pageId(name.slice(0, -3));
+          } catch {
+            warn('An invalid working-file name was skipped');
+            continue;
+          }
+          if (!m.entries[id]) {
+            if (Object.keys(m.entries).length >= 50) {
+              warn('Mapped-page limit reached; extra working files were skipped');
+              continue;
+            }
+            let body;
+            try {
+              body = await client.latestFile(folder + '/' + name);
+            } catch (cause) {
+              if (!invalidFileRead(cause)) throw cause;
+              warn('An invalid working-file document was skipped');
+              continue;
+            }
+            try {
+              decodeDocument(body?.content);
+            } catch {
+              warn('An invalid working-file document was skipped');
+              continue;
+            }
+            m.entries[id] = {
+              localId: id,
+              notionId: null,
+              folder,
+              parentId: connection.config.twoWay.parentId,
+              origin: 'local',
+              status: 'pending',
+              fileId: f.id
+            };
+            m.priority.push(id);
+          } else if (m.entries[id].fileId !== f.id) m.priority.push(id);
+        }
+        m.scan = null;
+        m.priority = [...new Set(m.priority)];
+      }
+    } else {
+      const ids = Object.keys(m.entries),
+        id = m.priority[0] ?? ids[m.index % ids.length];
+      entry = m.entries[id];
+      currentEntryId = id;
+      if (!entry) throw Error('Select a two-way page');
+      if (!allowed(connection, entry)) throw Error('Two-way selected scope mismatch');
+      const file = await client.latestFile(filePath(entry));
+      currentFile = file;
+      if (
+        entry.acceptedEdit &&
+        (!file ||
+          documentHash(decodeDocument(file.content)) !== documentHash(entry.acceptedEdit.document))
+      ) {
+        recoverAcceptedEdit(entry, file);
+      }
+      if (entry.deferred) {
+        m.pending = entry.deferred;
+        delete entry.deferred;
+      } else if (!entry.notionId) {
+        if (
+          entry.recoveryEdit &&
+          (!file ||
+            documentHash(decodeDocument(file.content)) !==
+              documentHash(entry.recoveryEdit.document))
+        ) {
+          holdEdit(entry, entry.recoveryEdit.document);
+          retainWorkingVersion(entry, file);
+          finish(m, entry);
+        } else if (file) {
+          const candidate = decodeDocument(file.content);
+          if (isManaged(candidate.markdown))
+            throw Error('Invalid managed document: new pages require ordinary Markdown');
+          if (entry.recoveryEdit) {
+            // Repairing the current file to the accepted bytes authorizes the original create.
+            entry.acceptedEdit = { ...entry.recoveryEdit, fileId: file.id };
+            delete entry.recoveryEdit;
+          }
+          m.pending = {
+            kind: 'create',
+            entryId: id,
+            operationId: randomUUID(),
+            phase: 'create',
+            document: candidate
+          };
+        } else {
+          if (entry.recoveryEdit) holdEdit(entry, entry.recoveryEdit.document);
+          else entry.status = 'missing';
+          finish(m, entry);
+        }
+      } else {
+        const remote = await readRemote(entry, credential);
+        if (!remote.supported) {
+          if (entry.acceptedEdit) recoverAcceptedEdit(entry, file);
+          if (entry.recoveryEdit) holdEdit(entry, entry.recoveryEdit.document);
+          else {
+            entry.status = 'unsupported';
+            entry.error =
+              remote.unsupportedReason ?? 'Notion page representation is incomplete or unsupported';
+          }
+          entry.title = remote.document.title;
+          finish(m, entry);
+        } else {
+          const local = file ? decodeDocument(file.content) : null;
+          if (entry.recoveryEdit && (!entry.conflict || !local)) {
+            if (local) {
+              retainWorkingVersion(entry, file);
+              conflict(m, entry, remote.document, entry.recoveryEdit.document, local);
+            } else {
+              holdEdit(entry, entry.recoveryEdit.document);
+              finish(m, entry);
+            }
+          } else {
+            const resolution = m.resolutions[id];
+            let decision = decideSync(entry.baseline ?? null, {
+              notion: remote.document,
+              fulcra: local
+            });
+            if (
+              entry.createdPending &&
+              remote.document.title === markerTitle(entry.localId) &&
+              remote.document.markdown === '' &&
+              !remote.document.archived &&
+              local
+            )
+              decision = 'push';
+            if (entry.conflict) {
+              const expectedCurrent = entry.conflict?.expectedCurrent;
+              if (
+                !expectedCurrent ||
+                expectedCurrent.notion !== documentHash(remote.document) ||
+                expectedCurrent.fulcra !== documentHash(local)
+              ) {
+                entry.status = 'pending';
+                decision = 'conflict';
+              } else {
+                entry.status = 'conflict';
+                decision = 'hold';
+              }
+            }
+            if (resolution) {
+              if (
+                local &&
+                resolution.conflictId === entry.conflict?.id &&
+                resolution.notion === documentHash(remote.document) &&
+                resolution.fulcra === documentHash(local)
+              )
+                decision = resolution.choice === 'notion' ? 'pull' : 'push';
+              delete m.resolutions[id];
+            }
+            if (decision === 'pull')
+              fileIntent(m, entry, remote.document, file, 'pull', {
+                notionDocument: remote.document
+              });
+            else if (decision === 'push') {
+              m.pending = {
+                kind: 'notion',
+                entryId: id,
+                phase: 'guard',
+                before: remote.document,
+                expected: remote.document,
+                desired: local,
+                sourceHash: documentHash(local)
+              };
+              entry.status = 'pending';
+            } else if (decision === 'conflict') {
+              if (entry.status !== 'conflict') {
+                if (entry.acceptedEdit) recoverAcceptedEdit(entry, file);
+                conflict(m, entry, remote.document, entry.recoveryEdit?.document ?? local, local);
+              } else finish(m, entry);
+            } else {
+              if (['noop', 'converge'].includes(decision))
+                converged(entry, remote.document, local, file);
+              else if (decision !== 'hold') entry.status = decision;
+              finish(m, entry);
+            }
+          }
+        }
+      }
+      keepActive = !!m.pending;
+    }
+    if (!m.pending && !connection.lastError?.startsWith('Creation outcome uncertain'))
+      connection.lastError = null;
+  } catch (cause) {
+    const message = cause instanceof Error ? cause.message : '';
+    const status = /** @type {any} */ (cause)?.status;
+    if (status === 429)
+      retryDelay = Math.max(
+        1000,
+        Date.parse(/** @type {any} */ (cause).retryAt ?? '') - Date.now() || 60000
+      );
+    if (m.pending?.kind === 'create' && m.pending.phase === 'create') {
+      if (m.pending.createCallStarted && !(status >= 400 && status < 500 && status !== 408)) {
+        m.pending.phase = 'recover';
+      } else {
+        m.pending.attemptId = randomUUID();
+        m.pending.createCallStarted = false;
+      }
+    }
+    connection.lastError =
+      status === 401 || status === 403
+        ? 'Notion authorization required: check Read, Update and Insert Content'
+        : /capacity|scope|configuration|Invalid|Choose |bound|metadata|incomplete|unsupported|newer|readback/.test(
+              message
+            )
+          ? message
+          : 'Two-way sync retry pending; retained operation will be reconciled';
+    if (/** @type {any} */ (cause)?.code === 'NOTION_SCOPE_MOVED' && currentEntryId) {
+      const failed = m.entries[currentEntryId];
+      recoverAcceptedEdit(
+        failed,
+        currentFile,
+        m.pending?.kind === 'notion' ? m.pending.desired : null
+      );
+      if (m.pending && m.pending.kind !== 'notion') failed.deferred = m.pending;
+      failed.status = 'quarantined';
+      failed.error = message;
+      finish(m, failed);
+    } else if (status === 404 && currentEntryId) {
+      const failed = m.entries[currentEntryId];
+      const held = recoverAcceptedEdit(
+        failed,
+        currentFile,
+        m.pending?.kind === 'notion' ? m.pending.desired : null
+      );
+      if (!held) {
+        failed.status = 'inaccessible';
+        failed.error = 'Notion page is inaccessible; other mapped pages continue';
+      }
+      if (m.pending && !(held && m.pending.kind === 'notion')) failed.deferred = m.pending;
+      finish(m, failed);
+    } else if (status === 404 && m.scan === 'pages') {
+      warn('Creation parent is inaccessible; existing mapped pages continue');
+      m.scan = 'files';
+      m.scanCursor = null;
+    } else if (
+      currentEntryId &&
+      (invalidFileRead(cause) ||
+        /^(Invalid working-file|Invalid document|Invalid managed|Invalid archive|Invalid Markdown|Choose a title|Markdown exceeds)/.test(
+          message
+        ))
+    ) {
+      const failed = m.entries[currentEntryId];
+      const held = recoverAcceptedEdit(
+        failed,
+        currentFile,
+        m.pending?.kind === 'notion' ? m.pending.desired : null
+      );
+      if (!held) {
+        failed.status = 'invalid';
+        failed.error = message;
+      }
+      if (m.pending && !(held && m.pending.kind === 'notion')) failed.deferred = m.pending;
+      finish(m, failed);
+    }
+    keepActive = false;
+  }
+  if (!m.pending && !Object.keys(m.queue).length && !m.priority.length) {
+    try {
+      const prepared = prepareIndex(m, connection, !!m.indexCheckRequested);
+      delete m.indexCheckRequested;
+      if (prepared && (m.indexRetryAt ?? 0) <= Date.now()) keepActive = true;
+    } catch {
+      m.indexStatus = {
+        ...m.indexStatus,
+        state: 'retry',
+        error: 'Index metadata needs attention; working page synchronization continues.'
+      };
+      m.indexRetryAt = Date.now() + 30000;
+    }
+  }
+  return persistPhase(keepActive);
+}
