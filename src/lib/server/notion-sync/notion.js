@@ -2,6 +2,7 @@ import { isManaged, encodeManaged } from '../../notion-managed.js';
 import { readManagedCapsule, applyManagedEdit } from './managed.js';
 import { providerHTTP } from '../connectors/http.js';
 import { normalizeDocument, MAX_MARKDOWN_BYTES } from './document.js';
+import { notionList, notionPage, notionMarkdown } from '../connectors/notion-response.js';
 /** @param {string} value */
 export function pageId(value) {
   if (typeof value !== 'string' || !/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/i.test(value))
@@ -43,6 +44,9 @@ export function createNotionPages({ fetchImpl = fetch } = {}) {
     id = pageId(id);
     const req = http(credential, deadline);
     const { data: page } = await req('pages/' + id);
+    notionPage(page, id);
+    if (!Object.values(page.properties).some((v) => /** @type {any} */ (v).type === 'title'))
+      throw Error('Invalid Notion page title response');
     const parentId =
       page.parent?.type === 'page_id' && page.parent.page_id ? pageId(page.parent.page_id) : null;
     if (expectedParent !== null)
@@ -59,6 +63,7 @@ export function createNotionPages({ fetchImpl = fetch } = {}) {
       .map((/** @type {any} */ r) => r.plain_text ?? r.text?.content ?? '')
       .join('');
     const { data } = await req(`pages/${id}/markdown?markdown_version=v2`);
+    notionMarkdown(data, id);
     let supported =
       (titleText || 'Untitled').length <= 200 &&
       typeof data.markdown === 'string' &&
@@ -128,18 +133,25 @@ export function createNotionPages({ fetchImpl = fetch } = {}) {
           }
     };
   }
-  /** @param {string} parent @param {any} credential @param {string|null} cursor @param {number} deadline */
-  async function children(parent, credential, cursor = null, deadline = Date.now() + 25000) {
+  /** @param {string} parent @param {any} credential @param {string|null} cursor @param {number} deadline @param {string[]} seen */
+  async function children(
+    parent,
+    credential,
+    cursor = null,
+    deadline = Date.now() + 25000,
+    seen = []
+  ) {
     const query = new URLSearchParams({
       page_size: '50',
       ...(cursor ? { start_cursor: cursor } : {})
     });
     const { data } = await http(credential, deadline)(`blocks/${pageId(parent)}/children?${query}`);
+    const list = notionList(data, cursor, 'block', seen);
     return {
-      pages: (data.results ?? [])
+      pages: list.results
         .filter((/** @type {any} */ b) => b.type === 'child_page')
         .map((/** @type {any} */ b) => ({ id: pageId(b.id), title: b.child_page.title })),
-      cursor: data.has_more ? data.next_cursor : null
+      cursor: list.cursor
     };
   }
   /** @param {string} parent @param {string} localId @param {any} credential @param {number} deadline */

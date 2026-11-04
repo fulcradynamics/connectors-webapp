@@ -174,6 +174,7 @@ it('runs actual Notion preview route with only identity/source reads and a local
           {
             id: uuid(11),
             type: 'paragraph',
+            has_children: false,
             paragraph: { rich_text: [{ plain_text: 'Demo body' }] }
           }
         ],

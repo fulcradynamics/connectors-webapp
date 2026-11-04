@@ -440,7 +440,13 @@ export async function advanceNotionSync(
           }
         }
       } else {
-        const children = await notion.children(entry.parentId, credential, p.cursor ?? null);
+        const children = await notion.children(
+          entry.parentId,
+          credential,
+          p.cursor ?? null,
+          Date.now() + 25000,
+          p.cursors ?? []
+        );
         const matches = children.pages.filter(
           (/** @type {any} */ child) => child.title === markerTitle(entry.localId)
         );
@@ -452,6 +458,7 @@ export async function advanceNotionSync(
           m.priority.unshift(entry.localId);
         } else {
           p.cursor = children.cursor;
+          p.cursors = children.cursor ? [...(p.cursors ?? []), children.cursor] : [];
           entry.status = 'creation_uncertain';
           if (!children.cursor) {
             p.cursor = null;
@@ -610,13 +617,16 @@ export async function advanceNotionSync(
       if (m.scanRequested) {
         m.scan = 'pages';
         m.scanCursor = null;
+        m.scanCursors = [];
         m.scanRequested = false;
       }
       if (m.scan === 'pages') {
         const children = await notion.children(
           connection.config.twoWay.parentId,
           credential,
-          m.scanCursor
+          m.scanCursor,
+          Date.now() + 25000,
+          m.scanCursors ?? []
         );
         for (const child of children.pages) {
           if (Object.values(m.entries).some((/** @type {any} */ e) => e.notionId === child.id))
@@ -649,6 +659,7 @@ export async function advanceNotionSync(
           m.priority.push(localId);
         }
         m.scanCursor = children.cursor;
+        m.scanCursors = children.cursor ? [...(m.scanCursors ?? []), children.cursor] : [];
         if (!children.cursor) m.scan = 'files';
       } else {
         const files = await client.listFiles(folder);

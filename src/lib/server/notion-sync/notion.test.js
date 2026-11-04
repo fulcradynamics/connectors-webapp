@@ -27,7 +27,9 @@ it('reads Markdown v2 and flags incomplete or unsupported representations', asyn
       Response.json(
         String(url).includes('/markdown')
           ? { markdown: '<unknown>…</unknown>', truncated: true, unknown_block_ids: [local] }
-          : page()
+          : String(url).includes('/children')
+            ? { results: [], has_more: false }
+            : page()
       )
   });
   expect((await incomplete.read(id, credential)).supported).toBe(false);

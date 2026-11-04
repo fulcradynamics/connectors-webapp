@@ -131,3 +131,7 @@ The worker refreshes this view after verified sync outcomes and checks it again 
 ### Why the current bounds exist
 
 The **50 mapped pages**, **24 KiB Markdown body** and **200-character title** bounds are this implementation's conservative POC guardrails, not Notion service limits. They bound repeated provider/file reads, encrypted mapping/recovery state, retained command payloads and full-body conflict handling. The native manifest and command/file readers also have finite byte budgets. Supporting larger collections/pages needs paginated or partitioned state and corresponding recovery/load tests, rather than silently lifting one constant. Indexing does not raise these bounds; pages outside supported limits stay explicitly unsupported rather than being truncated and written back.
+
+### Incomplete provider responses
+
+List reads require results and an explicit boolean completion flag; continuation requires a nonempty, nonrepeated cursor. Discovery/traversal retains cursor history across worker phases. Page metadata and Markdown fields used for sync are checked before managed-block fallback. Malformed responses remain failed/retryable source reads, never authoritative empty content or deletion. Documented truncation/unknown blocks still use the bounded complete protected-block projection when possible. Valid empty pages and opaque cursor strings are supported.

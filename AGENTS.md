@@ -28,3 +28,5 @@ Write meaningful regressions for behavior changes. Run `npm test`, `npm run test
 Use the Fulcra app-builder harness when extending a deployed app: record the user request, select a milestone, generate, independently evaluate, and record actual results/readbacks in the owner's private Fulcra workspace. Keep instance-specific work logs out of the public repo. Do not make up successful runs.
 
 Prepare PRs against `main`; include supported data, setup, tests and unverified limits. Do not auto-merge contributions, enable collection, publish private data or deploy to another owner's app without authorization.
+
+Notion provider-boundary validation must precede scan completion and protected-block fallback. Reuse `connectors/notion-response.js` for consumed list/page/Markdown contracts; preserve opaque cursors, complete empty pages and unknown-block protection. Failed/malformed reads retain pending obligations and cannot authorize empty writeback or inferred deletion.

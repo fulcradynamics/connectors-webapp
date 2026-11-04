@@ -1,3 +1,4 @@
+import { notionList } from '../connectors/notion-response.js';
 import { encodeManaged, parseManaged, planManagedEdit } from '../../notion-managed.js';
 import { canonical } from '../sync/identity.js';
 const editableTypes = new Set([
@@ -117,9 +118,10 @@ export async function readManagedCapsule(request, pageId, limits = {}) {
         ...(cursor ? { start_cursor: cursor } : {})
       });
       const { data } = await request(`blocks/${parent}/children?${query}`);
-      if (!Array.isArray(data.results) || typeof data.has_more !== 'boolean')
-        throw Error('Incomplete managed block response');
-      for (const block of data.results) {
+      const list = notionList(data, cursor, 'block', [...cursors]);
+      for (const block of list.results) {
+        if (typeof block.has_children !== 'boolean')
+          throw Error('Invalid Notion block children response');
         if (++nodes > maxNodes) throw Error('Managed block capacity bound exceeded');
         const blockId = id(block.id);
         if (seen.has(blockId)) throw Error('Repeated managed block ID');
@@ -143,7 +145,7 @@ export async function readManagedCapsule(request, pageId, limits = {}) {
           result.push({ id: blockId, type: block.type, editable: false, snapshot });
         }
       }
-      cursor = data.has_more ? data.next_cursor : null;
+      cursor = list.cursor;
       if (
         data.has_more &&
         (typeof cursor !== 'string' || !cursor || cursor.length > 2000 || cursors.has(cursor))
