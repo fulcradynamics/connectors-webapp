@@ -253,9 +253,10 @@ node scripts/deploy.mjs</code
       <p class="guide-entry">
         A company-owned Fulcra account can hold company imports and the shared map while members
         keep their own connectors and contribute through narrowly shared streams. Each app has one
-        verified owner. <a href="/guides/company-onboarding.md"
+        verified owner. <a
+          href="https://github.com/ashfulcra/fulcra-tools/blob/main/skills/map-our-team/references/setup.md"
           >Set up the company and member pattern ↗</a
-        >
+        >. <a href="/guides/company-onboarding.md">Connector deployment details (Markdown) ↗</a>
       </p>
       <div class="build-grid">
         <article>

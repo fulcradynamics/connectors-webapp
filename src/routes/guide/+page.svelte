@@ -209,9 +209,13 @@ npm run build</code
         permission to write into Notion or Attio. Provider permissions and copied-data audiences
         must be reviewed separately.
       </p>
-      <a href="/guides/company-onboarding.md"
+      <a
+        href="https://github.com/ashfulcra/fulcra-tools/blob/main/skills/map-our-team/references/setup.md"
         >Company/member setup, prompts and permission checks ↗</a
       >
+      <p>
+        <a href="/guides/company-onboarding.md">Connector deployment reference (Markdown) ↗</a>
+      </p>
     </section>
     <section aria-labelledby="contribute">
       <h2 id="contribute">Contribute for review</h2>
