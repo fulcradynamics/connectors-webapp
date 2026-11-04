@@ -61,3 +61,73 @@ it('surfaces an archived own receipt with no current head instead of polling for
   own.state = 'archived';
   expect(await advanceFile(p, f.client)).toBe('changed');
 });
+it('persists validated MIME and uses the same type for allocation and transfer', async () => {
+  const f = memoryFiles(),
+    seen = /** @type {any[]} */ ([]);
+  const client = /** @type {any} */ (f.client),
+    allocate = client.allocateFile,
+    transfer = client.transferFile;
+  client.allocateFile = async (
+    /** @type {string} */ path,
+    /** @type {string} */ content,
+    /** @type {string} */ type
+  ) => {
+    seen.push(type);
+    return allocate(path, content, type);
+  };
+  client.transferFile = async (
+    /** @type {any} */ receipt,
+    /** @type {string} */ content,
+    /** @type {string} */ type
+  ) => {
+    seen.push(type);
+    return transfer(receipt, content, type);
+  };
+  const p = fileIntent('/attio/index.md', '# Index', null, 65536, 'text/markdown');
+  expect(p.contentType).toBe('text/markdown');
+  expect(await drive(p, client)).toBe('verified');
+  expect(seen).toEqual(['text/markdown', 'text/markdown']);
+  expect(() => fileIntent('/attio/index.md', '# Index', null, 65536, 'text/html')).toThrow(
+    /content type|intent/i
+  );
+});
+it('retains JSON MIME for a legacy allocated receipt rather than changing its signed upload', async () => {
+  const f = memoryFiles(),
+    client = /** @type {any} */ (f.client),
+    p = fileIntent('/attio/index.md', '# Legacy', null);
+  await advanceFile(p, client);
+  await advanceFile(p, client);
+  delete p.contentType;
+  let transferred = '';
+  const transfer = client.transferFile;
+  client.transferFile = async (
+    /** @type {any} */ receipt,
+    /** @type {string} */ content,
+    /** @type {string} */ type
+  ) => {
+    transferred = type;
+    return transfer(receipt, content, type);
+  };
+  expect(await drive(p, client)).toBe('verified');
+  expect(transferred).toBe('application/json');
+});
+it('does not accept a changed MIME after a receipt was allocated', async () => {
+  const f = memoryFiles(),
+    p = fileIntent('/attio/a.json', '{}', null);
+  await advanceFile(p, f.client);
+  await advanceFile(p, f.client);
+  p.contentType = 'text/markdown';
+  await expect(advanceFile(p, f.client)).rejects.toThrow(/content type/i);
+  expect(f.calls).toEqual(['allocate']);
+});
+it('does not verify bytes alone when published MIME is wrong', async () => {
+  const f = memoryFiles(),
+    p = fileIntent('/attio/a.json', '{}', null);
+  await advanceFile(p, f.client);
+  await advanceFile(p, f.client);
+  await advanceFile(p, f.client);
+  const head = f.files.get('/attio/a.json')?.[0];
+  if (!head) throw Error('missing test file');
+  head.content_type = 'text/markdown';
+  await expect(advanceFile(p, f.client)).rejects.toThrow(/content type readback/i);
+});

@@ -142,12 +142,36 @@ export function indexStatus(m, c) {
     ...(i.publishedAt ? { publishedAt: i.publishedAt } : {})
   };
 }
+/** Includes idle manifests and manifests made pending by an ordinary document update.
+ * @param {any} m */
+export function needsIndexMigration(m) {
+  return (
+    m.index?.contentType !== 'text/markdown' ||
+    Object.values(m.indexSummary ?? {}).some(
+      (ref) => /** @type {any} */ (ref).contentType !== 'text/markdown'
+    ) ||
+    Object.values(m.indexGroups ?? {}).some(
+      (ref) => /** @type {any} */ (ref).contentType !== 'text/markdown'
+    )
+  );
+}
 /** One file phase per call; caller persists m before the next call. No document bodies enter the compact summaries.
  * @param {any} m @param {any} c @param {any} client @param {any} store @param {any} crypto @returns {Promise<boolean>} */
 export async function advanceIndex(m, c, client, store, crypto) {
   m.indexQueue ??= [];
   m.indexSummary ??= {};
   m.indexGroups ??= {};
+  // Older publications used JSON metadata for Markdown. Queue a bounded repair pass.
+  if (needsIndexMigration(m)) {
+    for (const prefix of Object.keys(m.indexSummary))
+      if (
+        (m.indexSummary[prefix].contentType !== 'text/markdown' ||
+          m.indexGroups[prefix[0]]?.contentType !== 'text/markdown') &&
+        !m.indexQueue.includes(prefix)
+      )
+        m.indexQueue.push(prefix);
+    m.index = { ...m.index, state: m.index?.state === 'retry' ? 'retry' : 'pending' };
+  }
   if (!m.indexPending && !m.indexQueue.length && m.index?.state === 'current') return false;
   m.indexPending ??= {
     prefix: m.indexQueue[0] ?? null,
@@ -183,13 +207,29 @@ export async function advanceIndex(m, c, client, store, crypto) {
     }
     if (!p.intent) {
       const current = (await client.fileState(path, { maxBytes: 64 * 1024 })).file;
-      if (current && contentHash(current.content) === contentHash(content))
+      const currentType = current?.versions?.find(
+        (/** @type {any} */ v) => v.id === current.id
+      )?.content_type;
+      if (
+        current &&
+        currentType === 'text/markdown' &&
+        contentHash(current.content) === contentHash(content)
+      )
         return complete(m, p, current.id, content);
-      p.intent = fileIntent(path, content, current);
+      p.intent = fileIntent(path, content, current, 64 * 1024, 'text/markdown');
       return true;
     }
+    // Before allocation, upgrading an old intent is safe. Once allocated, reconcile
+    // its original JSON upload first, retain the receipt, then publish a new Markdown version.
+    if (!p.intent.receipt) p.intent.contentType = 'text/markdown';
     const result = await advanceFile(p.intent, client);
-    if (result === 'verified') return complete(m, p, p.intent.file.id, content);
+    if (result === 'verified') {
+      if (p.intent.contentType === 'text/markdown')
+        return complete(m, p, p.intent.file.id, content);
+      retainAttempt(p);
+      p.intent = null;
+      return true;
+    }
     if (result === 'changed') {
       retainAttempt(p);
       p.intent = null;
@@ -215,6 +255,7 @@ function retainAttempt(p) {
       path: i.path,
       revision: contentHash(i.content),
       receipt: i.receipt,
+      contentType: i.contentType ?? 'application/json',
       history: i.history,
       interveningFileIds: i.interveningFileIds ?? []
     }
@@ -222,7 +263,31 @@ function retainAttempt(p) {
 }
 /** @param {any} m @param {any} p @param {string} fileId @param {string} content */
 function complete(m, p, fileId, content) {
-  const ref = { state: 'current', revision: contentHash(content), fileId };
+  const prior =
+    p.stage === 'bucket'
+      ? m.indexSummary[p.prefix]
+      : p.stage === 'group'
+        ? m.indexGroups[p.prefix[0]]
+        : m.index;
+  const previous = [
+    ...(prior?.previous ?? []),
+    ...(p.previous ?? []).map((/** @type {any} */ attempt) => ({
+      path: attempt.path,
+      revision: attempt.revision,
+      inputId: attempt.receipt?.inputId ?? null,
+      contentType: attempt.contentType,
+      historyHash: contentHash(JSON.stringify(attempt.history ?? [])),
+      historyCount: (attempt.history ?? []).length,
+      interveningFileIds: (attempt.interveningFileIds ?? []).slice(-4)
+    }))
+  ].slice(-4);
+  const ref = {
+    state: 'current',
+    revision: contentHash(content),
+    fileId,
+    contentType: 'text/markdown',
+    ...(previous.length ? { previous } : {})
+  };
   if (p.stage === 'bucket') {
     m.indexSummary[p.prefix] = { ...p.counts, ...ref };
     p.stage = 'group';

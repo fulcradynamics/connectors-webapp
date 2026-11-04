@@ -7,7 +7,8 @@ export function memoryFiles() {
   const put = (
     /** @type {string} */ path,
     /** @type {string} */ content,
-    id = `file-${++sequence}`
+    id = `file-${++sequence}`,
+    contentType = 'application/json'
   ) => {
     const previous = files.get(path) ?? [];
     for (const f of previous) if (f.state === 'uploaded') f.state = 'archived';
@@ -15,6 +16,7 @@ export function memoryFiles() {
       id,
       path,
       content,
+      content_type: contentType,
       state: 'uploaded',
       uploaded_at: new Date(1700000000000 + sequence).toISOString()
     };
@@ -43,18 +45,27 @@ export function memoryFiles() {
       if (bytes.length > maxBytes) throw Error('Working-file content exceeds bound');
       return bytes;
     },
-    allocateFile: async (/** @type {string} */ path, /** @type {string} */ content) => {
+    allocateFile: async (
+      /** @type {string} */ path,
+      /** @type {string} */ content,
+      contentType = 'application/json'
+    ) => {
       calls.push('allocate');
       const id = `file-${++sequence}`;
-      allocations.set(id, { path, content });
+      allocations.set(id, { path, content, contentType });
       return { file: { id }, url: `https://upload.example/${id}` };
     },
-    transferFile: async (/** @type {any} */ receipt, /** @type {string} */ content) => {
+    transferFile: async (
+      /** @type {any} */ receipt,
+      /** @type {string} */ content,
+      contentType = 'application/json'
+    ) => {
       calls.push('transfer');
       const id = receipt.url.split('/').at(-1),
         p = allocations.get(id);
       if (!p) throw Error('Unknown allocation');
-      put(p.path, content, id);
+      if (contentType !== p.contentType) throw Error('Upload MIME differs from allocation');
+      put(p.path, content, id, contentType);
     },
     uploadFile: async (/** @type {string} */ path, /** @type {string} */ content) => {
       calls.push('upload');

@@ -949,3 +949,33 @@ it('binds provider readback conflicts to the accepted current working revision',
   expect(current.id).not.toBe(before.id);
   expect((await f.entry()).conflict.expectedRevision).toBe(current.id);
 });
+it('runs MIME migration for an idle current manifest through the real worker branch', async () => {
+  const t = fixture();
+  await t.until(async () => {
+    const m = await t.manifest();
+    return m.cycleComplete && m.index?.state === 'current';
+  });
+  const m = await t.manifest();
+  delete m.index.contentType;
+  for (const ref of Object.values(m.indexSummary ?? {})) delete ref.contentType;
+  for (const ref of Object.values(m.indexGroups ?? {})) delete ref.contentType;
+  m.indexQueue = [];
+  m.indexPending = null;
+  await saveManifest(nativeStore(t.state), t.c, m, crypto);
+  const before = t.calls.length;
+  await t.step();
+  expect(t.calls.length).toBeGreaterThanOrEqual(before);
+  const after = await t.manifest();
+  expect(
+    after.indexPending || after.indexQueue?.length || after.index.contentType === 'text/markdown'
+  ).toBeTruthy();
+  await t.until(async () => {
+    const latest = await t.manifest();
+    return (
+      latest.index?.state === 'current' &&
+      latest.index.contentType === 'text/markdown' &&
+      Object.values(latest.indexSummary ?? {}).every((ref) => ref.contentType === 'text/markdown')
+    );
+  });
+  expect(t.writes).toEqual([]);
+});

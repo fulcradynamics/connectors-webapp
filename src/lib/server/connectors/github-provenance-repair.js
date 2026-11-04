@@ -66,13 +66,19 @@ export function planGitHubRepair(c, record, ownerId, before) {
   return {
     status: 'ready',
     target,
-    intent: { file: fileIntent(target.path, target.content, before, 256 * 1024), previous: [] }
+    intent: {
+      file: fileIntent(target.path, target.content, before, 256 * 1024, 'text/markdown'),
+      previous: []
+    }
   };
 }
 /** One retained phase; caller saves after every phase/error before continuing.
  * @param {any} p @param {any} client */
 export async function advanceGitHubRepair(p, client) {
   const file = p.file;
+  // Legacy repair uploads already used Markdown through the transport facade.
+  file.contentType ??= 'text/markdown';
+  if (file.receipt) file.receipt.contentType ??= 'text/markdown';
   if (p.rejected) {
     const remote = await client.fileState(file.path, { maxBytes: file.maxBytes });
     if (!remote.versions.some((/** @type {any} */ v) => v.id === file.receipt?.inputId)) {
@@ -99,7 +105,7 @@ export async function advanceGitHubRepair(p, client) {
         ...(p.previous ?? []),
         { receipt: file.receipt, history: file.history, deleted: file.deleted }
       ];
-      p.file = fileIntent(file.path, file.content, remote.file, file.maxBytes);
+      p.file = fileIntent(file.path, file.content, remote.file, file.maxBytes, 'text/markdown');
       delete p.rejected;
       return 'pending';
     }

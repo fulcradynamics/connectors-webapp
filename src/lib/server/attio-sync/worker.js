@@ -20,7 +20,7 @@ import {
 } from './state.js';
 import { fileIntent, advanceFile } from './files.js';
 import { baselineFor, reconcile } from './reconcile.js';
-import { queueIndex, advanceIndex, indexStatus } from './index.js';
+import { queueIndex, advanceIndex, indexStatus, needsIndexMigration } from './index.js';
 import { readRemoteObservation, providerHash, assertBinding } from './projection.js';
 import {
   prepareRevision,
@@ -331,7 +331,10 @@ export async function advanceAttioSync(state, c, { crypto, client, provider, api
       if (m.cycleComplete) {
         if (
           (m.indexRetryAt ?? 0) <= Date.now() &&
-          (m.indexPending || m.indexQueue?.length || m.index?.state !== 'current')
+          (m.indexPending ||
+            m.indexQueue?.length ||
+            m.index?.state !== 'current' ||
+            needsIndexMigration(m))
         ) {
           await advanceIndex(m, c, client, store, crypto);
           if (m.index?.state === 'retry') {

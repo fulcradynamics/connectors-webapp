@@ -68,12 +68,12 @@ class Files {
     if (this.failReads) throw Error('transport');
     return { file: this.current.get(path) ?? null, versions: this.versions.get(path) ?? [] };
   }
-  /** @param {string} path @param {string} content */
-  async allocateFile(path, content) {
+  /** @param {string} path @param {string} content @param {string} contentType */
+  async allocateFile(path, content, contentType) {
     this.allocationCount++;
     const id = randomUUID(),
       url = `https://upload.invalid/${id}`;
-    this.allocations.set(url, { id, path, content });
+    this.allocations.set(url, { id, path, content, contentType });
     return { file: { id }, url };
   }
   /** @param {{url:string}} target @param {string} content */
@@ -85,7 +85,12 @@ class Files {
       ...v,
       state: 'archived'
     }));
-    versions.push({ id: item.id, state: 'uploaded', uploaded_at: new Date(at).toISOString() });
+    versions.push({
+      id: item.id,
+      state: 'uploaded',
+      uploaded_at: new Date(at).toISOString(),
+      content_type: item.contentType
+    });
     this.versions.set(item.path, versions);
     this.current.set(item.path, { id: item.id, content });
     if (this.loseTransferResponse) {

@@ -119,7 +119,14 @@ it('recovers a committed repair with lost response without duplicate upload and 
   const { owner, c, record, before } = fixture(),
     plan = planGitHubRepair(c, record, owner, before);
   let current = before,
-    versions = [{ id: before.id, state: 'uploaded', uploaded_at: new Date().toISOString() }],
+    versions = [
+      {
+        id: before.id,
+        state: 'uploaded',
+        uploaded_at: new Date().toISOString(),
+        content_type: 'text/markdown'
+      }
+    ],
     allocations = 0,
     transfers = 0,
     receipt = /** @type {any} */ (null);
@@ -144,7 +151,12 @@ it('recovers a committed repair with lost response without duplicate upload and 
       transfers++;
       versions = [
         { ...versions[0], state: 'archived' },
-        { id: receipt.id, state: 'uploaded', uploaded_at: new Date().toISOString() }
+        {
+          id: receipt.id,
+          state: 'uploaded',
+          uploaded_at: new Date().toISOString(),
+          content_type: 'text/markdown'
+        }
       ];
       current = { id: receipt.id, content };
       throw Error('lost response');
@@ -166,7 +178,14 @@ it('replaces a rejected capability only after fresh history excludes its allocat
   const { owner, c, record, before } = fixture(),
     plan = planGitHubRepair(c, record, owner, before);
   let current = before,
-    versions = [{ id: before.id, state: 'uploaded', uploaded_at: new Date().toISOString() }],
+    versions = [
+      {
+        id: before.id,
+        state: 'uploaded',
+        uploaded_at: new Date().toISOString(),
+        content_type: 'text/markdown'
+      }
+    ],
     allocations = 0,
     transfers = 0;
   /** @type {any} */ let receipt;
@@ -184,7 +203,12 @@ it('replaces a rejected capability only after fresh history excludes its allocat
       transfers++;
       versions = [
         { ...versions[0], state: 'archived' },
-        { id: receipt.id, state: 'uploaded', uploaded_at: new Date().toISOString() }
+        {
+          id: receipt.id,
+          state: 'uploaded',
+          uploaded_at: new Date().toISOString(),
+          content_type: 'text/markdown'
+        }
       ];
       current = { id: receipt.id, content };
     }
@@ -245,7 +269,8 @@ it('retains fresh published/deleted history after a rejected capability, even wi
         ? [...versions, { id: changedId, state: 'deleted', uploaded_at: '2026-01-03' }]
         : versions.map((v) => (v.id === changedId ? { ...v, state: 'deleted' } : v));
     expect(await advanceGitHubRepair(p, client)).toBe('changed');
-    expect(p.file.receipt).toEqual(receipt);
+    expect(p.file.receipt).toMatchObject(receipt);
+    expect(p.file.receipt.contentType).toBe('text/markdown');
     expect(p.file.interveningFileIds).toContain(changedId);
     expect(p.rejected).toBe(true);
   }
@@ -266,5 +291,63 @@ it('stops replacement attempts at the bound without losing earlier evidence', as
     advanceGitHubRepair(p, { fileState: async () => ({ file: before, versions }) })
   ).rejects.toThrow(/bound/);
   expect(p.previous).toEqual(previous);
-  expect(p.file.receipt).toEqual(receipt);
+  expect(p.file.receipt).toMatchObject(receipt);
+  expect(p.file.receipt.contentType).toBe('text/markdown');
+});
+it('resumes a legacy Markdown repair intent without relabeling its allocated capability as JSON', async () => {
+  const { owner, c, record, before } = fixture(),
+    plan = planGitHubRepair(c, record, owner, before);
+  delete plan.intent.file.contentType;
+  const seen = /** @type {string[]} */ ([]);
+  let current = before;
+  let versions = [
+    {
+      id: before.id,
+      state: 'uploaded',
+      uploaded_at: new Date().toISOString(),
+      content_type: 'text/markdown'
+    }
+  ];
+  const client = {
+    fileState: async () => ({ file: current, versions }),
+    allocateFile: async (
+      /** @type {string} */ _path,
+      /** @type {string} */ _content,
+      /** @type {string} */ type
+    ) => {
+      seen.push(type);
+      return {
+        file: { id: '11111111-1111-4111-8111-111111111111' },
+        url: 'https://upload.invalid/md'
+      };
+    },
+    transferFile: async (
+      /** @type {any} */ _receipt,
+      /** @type {string} */ content,
+      /** @type {string} */ type
+    ) => {
+      seen.push(type);
+      current = { id: '11111111-1111-4111-8111-111111111111', content };
+      versions = [
+        {
+          id: before.id,
+          state: 'archived',
+          uploaded_at: new Date().toISOString(),
+          content_type: 'text/markdown'
+        },
+        {
+          id: '11111111-1111-4111-8111-111111111111',
+          state: 'uploaded',
+          uploaded_at: new Date().toISOString(),
+          content_type: 'text/markdown'
+        }
+      ];
+    }
+  };
+  for (let n = 0; n < 6; n++) {
+    await advanceGitHubRepair(plan.intent, client);
+    if (plan.intent.file.file) break;
+  }
+  expect(plan.intent.file.file.id).toBe('11111111-1111-4111-8111-111111111111');
+  expect(seen).toEqual(['text/markdown', 'text/markdown']);
 });

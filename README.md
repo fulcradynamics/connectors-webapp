@@ -77,3 +77,5 @@ MIT licensed. Based on the [Fulcra Svelte app starter](https://github.com/fulcra
 Use the optional [scheduled knowledge-maintenance recipe](docs/knowledge-maintenance.md) to run the skill in Codex or Claude. It is a per-installation setup pattern; it creates no personal automation or model service.
 
 Notion provider responses are validated before a source scan can complete or a page can become a writable working copy. Missing list/Markdown fields, malformed child records and invalid or repeated pagination cursors retain retryable work; they do not become empty content. Opaque next cursors pass through unchanged. A complete empty page remains valid, and documented incomplete Markdown can still use a complete protected-block projection. See the [Notion pagination contract](https://developers.notion.com/reference/pagination).
+
+Attio’s generated `.md` indexes use Markdown metadata at allocation and upload. Persisted legacy JSON uploads reconcile under their original type, then receive a new verified Markdown version; retained historical receipts are preserved.
