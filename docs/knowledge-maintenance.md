@@ -4,6 +4,8 @@ Use an ordinary scheduled task in Codex or Claude to run the optional Company Kn
 
 This is a reusable setup recipe. It creates no schedule merely by being installed or copied. Each installer chooses the account, sources, writer, output scope and timing.
 
+For a new company account and member-owned contributions, first follow [company and member onboarding](company-onboarding.md) and the skill's [company deployment contract](https://github.com/ashfulcra/fulcra-tools/blob/main/skills/map-our-team/references/company-deployment.md). Its canonical configuration owns incoming-join checks and contribution reconciliation; this guide does not introduce another stream format or listener. Verify company storage identity separately from the operator/contact identity. Read-only shares cannot be used by members to edit company connector working copies, and contribution delivery does not authorize provider writeback.
+
 ## Prepare your installation
 
 1. Install the [Company Knowledge Skill (`map-our-team`)](https://github.com/ashfulcra/fulcra-tools/tree/main/skills/map-our-team), and connect the source accounts you want the agent to use. A connector app is optional; platform-connected accounts work on their own.

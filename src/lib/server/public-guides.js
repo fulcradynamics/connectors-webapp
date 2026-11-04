@@ -1,4 +1,5 @@
 import maintenance from '../../../docs/knowledge-maintenance.md?raw';
+import company from '../../../docs/company-onboarding.md?raw';
 import knowledge from '../../../docs/knowledge-sources.md?raw';
 import security from '../../../SECURITY.md?raw';
 import design from '../../../docs/design.md?raw';
@@ -19,6 +20,7 @@ import slack from '../../../docs/providers/slack.md?raw';
 // Deliberate public document allowlist. Never derive a filesystem path from a URL.
 /** @type {Record<string,string>} */
 const guides = {
+  'company-onboarding.md': company,
   'knowledge-maintenance.md': maintenance,
   'knowledge-sources.md': knowledge,
   'security.md': security,
@@ -41,6 +43,9 @@ const guides = {
 
 // Keep repository-relative links useful in the explicitly published copies.
 const guideLinks = {
+  'company-onboarding.md': '/guides/company-onboarding.md',
+  'docs/company-onboarding.md': '/guides/company-onboarding.md',
+  '../company-onboarding.md': '/guides/company-onboarding.md',
   'docs/agent-guide.md': '/guides/agent.md',
   'agent-guide.md': '/guides/agent.md',
   'user-guide.md': '/guides/user.md',

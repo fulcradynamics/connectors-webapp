@@ -1,6 +1,8 @@
-# Deploy your personal app
+# Deploy an account-owned connector app
 
 Use your own Fulcra account and namespace. Each deployment has independent credentials, encryption keys and operational state. Native Workflow persistence/scheduling is bundled through Fulcra hosting; a separate database, cron or Vercel account is not required.
+
+The owner can be a personal account or a new company-owned account. For a team, start with [company and member onboarding](company-onboarding.md) and verify which account will own the deployment before authenticating. Members read approved company outputs through Fulcra shares; the app currently has no multi-user administration. Set up member instances separately rather than copying company secrets.
 
 ## First deployment
 
@@ -43,4 +45,4 @@ Controllers carry state across epochs and move to the latest deployment. Pause b
 | `PUBLIC_AUTH0_*`, `PUBLIC_FULCRA_API_ENDPOINT`                            | Official public login configuration                                |
 | `DATABASE_URL`, `CRON_SECRET`                                             | Optional independently managed PostgreSQL/cron backend only        |
 
-New clones default to `CONNECTORS_MODE=personal`: minimal login and verified-owner controls/guides/APIs. Only a deliberate public documentation/reference deployment uses `public-template` mode. An owner may explicitly supply public HTML/agent text in `personal-landing.js`; keep it separate from private controls.
+New clones default to `CONNECTORS_MODE=personal`: minimal login and verified-owner controls/guides/APIs, including when that owner is a company account. The setting names a private deployment mode, not individual-only ownership. Only a deliberate public documentation/reference deployment uses `public-template` mode; it does not enable shared administration. An owner may explicitly supply public HTML/agent text in `personal-landing.js`; keep it separate from private controls.

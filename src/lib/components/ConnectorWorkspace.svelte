@@ -214,7 +214,7 @@
         : !setup
           ? 'Checking setup…'
           : setup.ready
-            ? 'Personal deployment'
+            ? 'Owner-protected deployment'
             : 'Setup required'}
     </div>
   </div>

@@ -250,6 +250,13 @@ node scripts/deploy.mjs</code
         and can also discover this app’s folders and verified indexes. Each works on its own;
         together they use associated source pointers.
       </p>
+      <p class="guide-entry">
+        A company-owned Fulcra account can hold company imports and the shared map while members
+        keep their own connectors and contribute through narrowly shared streams. Each app has one
+        verified owner. <a href="/guides/company-onboarding.md"
+          >Set up the company and member pattern ↗</a
+        >
+      </p>
       <div class="build-grid">
         <article>
           <h3>Add the knowledge skill</h3>

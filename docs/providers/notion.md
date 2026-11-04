@@ -16,10 +16,14 @@ The default mode makes **one-way copies from Notion into your Fulcra account**. 
 
 **A new connection has no content access by default. A verified token alone does not grant any page access.** Notion search can take time to index a new grant.
 
+These instructions apply to an **internal connection**, not every Notion credential. Notion also documents user-scoped PATs and OAuth; this template does not provision those flows. Verify credential kind before assuming a page picker or member-limited access. See [official authorization](https://developers.notion.com/guides/authorization/overview).
+
+For company use, only grant/select pages intended for the chosen Fulcra audience, including accessible children. The connector does not mirror Notion page permissions into Fulcra. Removing Notion access does not remove retained copies or their shares. See [company and member onboarding](../company-onboarding.md); a member's contribution is not permission to publish it into a company page.
+
 ## 3. Verify the token in your own connector app
 
 1. Return to Notion **Configuration** and copy the **API token**. Keep it secret; never paste it in chat, source code or a Notion page.
-2. Open your personal Fulcra connector deployment's `/app`. Ensure **Background access ready for all connectors** is shown; approve background access if needed. Browser sign-in and background authorization are separate.
+2. Open your owner-protected Fulcra connector deployment's `/app`. Ensure **Background access ready for all connectors** is shown; approve background access if needed. Browser sign-in and background authorization are separate.
 3. Choose **Notion**, enter a connection name and paste the token into **Internal connection API token**. Choose **Verify and continue →**. Verification checks the connection identity and does not start collection.
 
 ## 4. Select pages and an output

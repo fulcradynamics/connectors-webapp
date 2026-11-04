@@ -1,5 +1,14 @@
 import { it, expect } from 'vitest';
 import { publicGuides } from './public-guides.js';
+it('publishes the company onboarding guide through its explicit route and resolves its local links', () => {
+  const company = publicGuides['company-onboarding.md'];
+  expect(company).toBeDefined();
+  const linked = /\[company and member onboarding\]\(([^)]+)\)/.exec(
+    publicGuides['knowledge-sources.md']
+  )?.[1];
+  expect(linked).toBe('/guides/company-onboarding.md');
+  expect(publicGuides['../company-onboarding.md']).toBeUndefined();
+});
 it('routes published architecture and provider-limit links to readable guides while preserving anchors', () => {
   const security = publicGuides['security.md'];
   const design = publicGuides['design.md'];

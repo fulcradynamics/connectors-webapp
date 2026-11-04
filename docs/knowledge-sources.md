@@ -32,6 +32,8 @@ The connector owns manifests, navigation indexes, working documents and operatio
 
 Provider permissions and Fulcra copied-file permissions are separate. Offboarding must check each copied route and grant, not just revoke provider access. Installing a skill does not start a consolidation schedule or background model worker. Agent-assisted consolidation may be called “dreaming”; deterministic sync and index maintenance continue independently.
 
+For a company-owned account with member instances, use [company and member onboarding](company-onboarding.md). Company shares give read access, not app administration or permission to edit provider working copies. Members can publish proposals in their own narrowly shared contribution streams; the skill's [company deployment contract](https://github.com/ashfulcra/fulcra-tools/blob/main/skills/map-our-team/references/company-deployment.md) owns their format and reconciliation. Preserve producing account, provider namespace/object ID, revision, route and audience when associating pointers. Missing identity or unknown access does not justify merging copies or republishing restricted evidence.
+
 ## Install the optional Company Knowledge Skill
 
 The published [Company Knowledge Skill (`map-our-team`)](https://github.com/ashfulcra/fulcra-tools/tree/main/skills/map-our-team) can be installed in your agent:

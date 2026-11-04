@@ -10,6 +10,8 @@ Source: [fulcradynamics/connectors-webapp](https://github.com/fulcradynamics/con
 
 Start with the [reference app](https://connectors.my.fulcra.ai), or fork this repo and deploy at `your-name.my.fulcra.ai`.
 
+For a team, use a new company-owned Fulcra account for company imports and the knowledge map; members can keep independent personal connectors and share selected contributions back. Follow [company and member onboarding](docs/company-onboarding.md) for copyable prompts, provider permissions and output audiences, alongside [Fulcra Tools first-time setup](https://github.com/ashfulcra/fulcra-tools/blob/main/docs/team-knowledge-setup.md). Each deployment still has one verified owner; sharing output does not grant app administration or provider writeback.
+
 ## What it connects
 
 | Connector | Imported data                             | Example pattern                                      |

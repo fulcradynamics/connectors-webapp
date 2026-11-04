@@ -21,6 +21,12 @@ Use the official [API key creation and management help](https://attio.com/help/r
 
 Do not grant schema/list configuration writes, task, user, email or unrelated permissions for this connector. Actual record access can still deny an operation despite the scopes. Preview does not perform a test write.
 
+### Company and member permissions
+
+A single-workspace token acts independently of a member, at **workspace level**. Attio also offers user-level OAuth with explicit configuration and PKCE; this template does not implement that authorization/refresh flow. A personal installation therefore does not make this token member-limited. See [official token levels](https://docs.attio.com/rest-api/guides/authentication).
+
+The app validates workspace/scopes and an exact selected-record allowlist, not a Fulcra recipient's Attio permissions. It does not copy list ACLs. Select company-approved records/notes and divide Fulcra outputs by intended audience before sharing. Source revocation does not revoke already copied outputs or derived knowledge. Follow [company and member onboarding](../company-onboarding.md) for those separate grants and contribution boundaries.
+
 ## Sources → Destination → Schedule → Preview/Enable
 
 1. **Sources:** discover and select exact records, up to **1,000 per connection**. Identity is `objectUUID:recordUUID`; labels and slugs never authorize routing. Selecting a record does not select its whole object, future records or related contacts.

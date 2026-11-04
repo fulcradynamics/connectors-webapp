@@ -200,6 +200,19 @@ npm run build</code
         upstream review.
       </p>
     </section>
+    <section aria-labelledby="company">
+      <h2 id="company">Company account and member instances</h2>
+      <p>
+        Use a new company-owned Fulcra account for company imports and the knowledge map. Members
+        can use their existing platform connections or independent personal connector apps and share
+        selected proposals back. Output shares grant reading, not shared app administration or
+        permission to write into Notion or Attio. Provider permissions and copied-data audiences
+        must be reviewed separately.
+      </p>
+      <a href="/guides/company-onboarding.md"
+        >Company/member setup, prompts and permission checks ↗</a
+      >
+    </section>
     <section aria-labelledby="contribute">
       <h2 id="contribute">Contribute for review</h2>
       <p>
