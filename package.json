@@ -7,52 +7,104 @@
     "dev": "vite dev",
     "build": "vite build",
     "preview": "vite preview",
-    "prepare": "svelte-kit sync || echo ''",
-    "check": "svelte-kit sync && svelte-check --tsconfig ./jsconfig.json",
-    "check:watch": "svelte-kit sync && svelte-check --tsconfig ./jsconfig.json --watch",
+    "prepare": "svelte-kit sync",
+    "check": "svelte-kit sync && svelte-check --config ./vite.config.js --tsconfig ./jsconfig.json",
+    "check:watch": "svelte-kit sync && svelte-check --config ./vite.config.js --tsconfig ./jsconfig.json --watch",
     "format": "prettier --write .",
     "lint": "prettier --check . && eslint .",
     "test:unit": "vitest",
-    "test": "npm run test:unit -- --run",
+    "test": "npm run test:unit -- --run && npm run test:dependencies",
     "test:bootstrap": "node --test scripts/lib/*.test.mjs",
     "test:db": "node --test tests/*.integration.test.mjs",
     "test:examples": "vitest run src/lib/server/connectors",
-    "check:release": "node scripts/check-release.mjs"
+    "check:release": "node scripts/check-release.mjs",
+    "test:dependencies": "node --test scripts/security/dependencies.test.mjs",
+    "test:workflow-dependencies": "node scripts/security/native-canary.mjs"
   },
   "devDependencies": {
-    "@eslint/compat": "^1.4.0",
-    "@eslint/js": "^9.39.1",
-    "@sveltejs/adapter-auto": "^7.0.0",
-    "@sveltejs/adapter-node": "^5.5.1",
-    "@sveltejs/adapter-vercel": "^6.3.4",
-    "@sveltejs/kit": "^2.49.1",
-    "@sveltejs/vite-plugin-svelte": "^6.2.1",
+    "@eslint/compat": "2.1.1",
+    "@eslint/js": "10.0.1",
+    "@sveltejs/adapter-auto": "8.0.0",
+    "@sveltejs/adapter-node": "6.0.1",
+    "@sveltejs/adapter-vercel": "7.0.2",
+    "@sveltejs/kit": "3.1.1",
+    "@sveltejs/vite-plugin-svelte": "7.3.1",
     "@tailwindcss/vite": "^4.1.17",
     "@types/node": "^22",
-    "eslint": "^9.39.1",
+    "eslint": "10.14.0",
     "eslint-config-prettier": "^10.1.8",
-    "eslint-plugin-svelte": "^3.13.1",
+    "eslint-plugin-svelte": "3.23.1",
     "globals": "^16.5.0",
     "prettier": "^3.7.4",
     "prettier-plugin-svelte": "^3.4.0",
     "prettier-plugin-tailwindcss": "^0.7.2",
-    "svelte": "^5.45.6",
+    "svelte": "5.57.3",
     "svelte-check": "^4.3.4",
     "tailwindcss": "^4.1.17",
-    "typescript": "^5.9.3",
-    "vite": "^7.2.6",
-    "vitest": "^4.0.15"
+    "typescript": "^6.0.0",
+    "vite": "8.3.5",
+    "vitest": "5.1.0",
+    "deepmerge": "file:vendor/fulcra-security-deepmerge-1.0.2.tgz",
+    "@typescript-eslint/parser": "8.72.1"
   },
   "dependencies": {
     "ajv": "^8.20.0",
     "ajv-formats": "^3.0.1",
     "daisyui": "^5.5.14",
     "pg": "^8.23.1",
-    "workflow": "5.2.3"
+    "workflow": "5.2.3",
+    "@workflow/core": "5.2.3"
   },
   "overrides": {
-    "@sveltejs/kit": {
-      "cookie": "^0.7.2"
+    "deepmerge": "$deepmerge",
+    "@oclif/core": {
+      "minimatch": "11.0.4"
+    },
+    "@vercel/queue": {
+      "minimatch": "11.0.4",
+      "zod": "4.6.7"
+    },
+    "@swc/cli": {
+      "minimatch": "11.0.4"
+    },
+    "@vercel/nft": {
+      "glob": "14.0.3"
+    },
+    "eslint": {
+      "minimatch": "11.0.4",
+      "@eslint/config-array": {
+        "minimatch": "11.0.4"
+      }
+    },
+    "@workflow/core": {
+      "zod": "4.6.7"
+    },
+    "@workflow/cli": {
+      "zod": "4.6.7",
+      "@oclif/core": {
+        ".": "4.14.0",
+        "minimatch": "11.0.4"
+      }
+    },
+    "@workflow/world": {
+      "zod": "4.6.7"
+    },
+    "@workflow/world-local": {
+      "zod": "4.6.7",
+      "undici": "7.30.1"
+    },
+    "@workflow/world-vercel": {
+      "zod": "4.6.7",
+      "undici": "7.30.1"
+    },
+    "@vercel/cli-auth": {
+      "zod": "4.6.7"
+    },
+    "@vercel/cli-config": {
+      "zod": "4.6.7"
+    },
+    "@typescript-eslint/typescript-estree": {
+      "minimatch": "11.0.4"
     }
   },
   "engines": {

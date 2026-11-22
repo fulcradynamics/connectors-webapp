@@ -3,6 +3,15 @@
     $props();
   const examples = [
     {
+      id: 'attio',
+      name: 'Attio',
+      mark: 'A',
+      pattern: 'Typed CRM fields & linked notes',
+      description:
+        'Selected People / Companies, approved two-way fields and preserved note revisions.',
+      color: '#a9c6ff'
+    },
+    {
       id: 'granola',
       name: 'Granola',
       mark: 'G',
@@ -41,6 +50,14 @@
       pattern: 'Messages & threads',
       description: 'Selected channels, exact timestamps and signed hints.',
       color: '#9adccc'
+    },
+    {
+      id: 'garmin',
+      name: 'Garmin',
+      mark: '△',
+      pattern: 'Activities & health data',
+      description: 'Your Personal API key, selected datasets and daily reconciliation.',
+      color: '#b1d7ff'
     }
   ];
 </script>
@@ -48,7 +65,7 @@
 <section aria-labelledby="catalog-title">
   <div class="section-heading">
     <h2 id="catalog-title">Choose a connector</h2>
-    <span>5 example patterns</span>
+    <span>{examples.length} example patterns</span>
   </div>
   <div class="catalog">
     {#each examples as example}<button
@@ -63,7 +80,7 @@
       >{/each}
   </div>
   <p class="muted">
-    Live account verification is pending for these examples. Google connectors are deferred.
+    Choose a connector to review its setup steps, supported sources and sync options.
   </p>
 </section>
 

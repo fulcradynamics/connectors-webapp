@@ -1,6 +1,25 @@
 <script>
-  const repo = 'https://github.com/ashfulcra/connectors-webapp';
+  import { accountUrl, setupPrompt, copySetupPrompt } from '$lib/template-onboarding.js';
+  let copyStatus = $state('');
+  let promptOpen = $state(false);
+  async function copySetup() {
+    const copied = await copySetupPrompt(globalThis.navigator?.clipboard);
+    copyStatus = copied
+      ? 'Copied. Paste it into your coding agent.'
+      : 'Copy is unavailable here. Select and copy the prompt below.';
+    if (!copied) promptOpen = true;
+  }
+
+  const repo = 'https://github.com/fulcradynamics/connectors-webapp';
   const examples = [
+    {
+      name: 'Attio',
+      mark: 'At',
+      file: 'attio',
+      pattern: 'Typed fields and linked notes',
+      detail:
+        'Exact People/Companies records with optional approved two-way fields and preserved note revisions.'
+    },
     {
       name: 'Granola',
       mark: 'Gr',
@@ -37,15 +56,23 @@
       detail:
         'Selected channels and threads. Learn rate limits, replies, and event-assisted updates.',
       file: 'slack'
+    },
+    {
+      name: 'Garmin',
+      mark: 'Ga',
+      pattern: 'Activities & health → your store',
+      detail:
+        'Personal API access to selected activities, daily summaries, sleep, heart rate and HRV.',
+      file: 'garmin'
     }
   ];
 </script>
 
 <svelte:head>
-  <title>Fulcra Connectors — automatic data imports</title>
+  <title>Fulcra Connectors — deploy your own connectors</title>
   <meta
     name="description"
-    content="Connect tools and services to your Fulcra data store. Automatically import selected data, work with it using your agents, and share it through Fulcra."
+    content="Start with a Fulcra account, then have your coding agent deploy your own connectors site. This is the copyable reference template."
   />
 </svelte:head>
 
@@ -58,25 +85,38 @@
     <nav aria-label="Main navigation">
       <a href="#examples">Examples</a><a href="/guide">User guide</a><a href="#build"
         >Build & contribute</a
-      ><a class="workspace" href="/app">Open workspace ↗</a>
+      ><a class="workspace" href={accountUrl}>Fulcra account setup ↗</a>
     </nav>
   </header>
   <main id="main">
     <section class="intro-section">
-      <h1>Connect tools and services to your <span>Fulcra data store.</span></h1>
+      <p class="eyebrow">Copyable template · deploy your own</p>
+      <h1>Your own connectors.<br /><span>Your own Fulcra account.</span></h1>
       <p class="intro">
-        Once you enable a connector, it automatically imports selected data from that service into
-        Fulcra. Work with the imported data using any of your agents. Share selected data through
-        Fulcra with other users and their agents.
+        This is the Fulcra connectors template. Start by creating or connecting your account at
+        <a href={accountUrl}>fulcra.ai</a>. Then ask your coding agent to deploy your own
+        copy at <code>[name].my.fulcra.ai</code>. You’ll sign in and connect your services on that
+        site.
       </p>
       <div class="actions">
-        <a class="button primary" href="#get-started">Get the template <span>↓</span></a><a
-          class="button secondary"
-          href={repo}>Explore the source ↗</a
+        <a class="button primary" href={accountUrl}>Get started with Fulcra ↗</a>
+        <button class="button secondary" type="button" onclick={copySetup}
+          >Copy coding-agent setup prompt</button
         >
       </div>
+      <p class="quiet copy-status" role="status">{copyStatus}</p>
+      <details id="agent-setup" bind:open={promptOpen} class="agent-setup">
+        <summary>Read or copy the setup prompt</summary>
+        <p>
+          Use a coding agent with terminal and deployment tools. A regular chat can guide setup;
+          connecting it to Fulcra does not install those tools.
+        </p>
+        <textarea aria-label="Coding-agent setup prompt" readonly value={setupPrompt} rows="9"
+        ></textarea>
+      </details>
       <p class="quiet">
-        Choose the sources, destination folders or data types, and polling interval.
+        Each deployment has its own credentials and configuration, and imports into its owner’s
+        Fulcra account. Choose which sources to collect and who can read the copies.
       </p>
       <div
         class="flow"
@@ -106,7 +146,7 @@
       <div class="section-heading">
         <div>
           <p class="eyebrow">Learn by example</p>
-          <h2>Five connectors. Five useful patterns.</h2>
+          <h2>{examples.length} connectors, with setup and source controls.</h2>
         </div>
         <p>Start with one. Reuse the pieces for the next.</p>
       </div>
@@ -125,93 +165,136 @@
         {/each}
       </div>
       <p class="preview-note">
-        <span class="dot"></span> Developer preview: adapters have fixture coverage. Live account verification
-        is still pending; native hosting and scheduling deploy with the app. Read each guide for supported
-        data and limits.
+        <span class="dot"></span> Connect the services you use. Each guide covers setup, supported data
+        and sync controls.
       </p>
     </section>
 
     <section id="get-started" class="start">
       <div class="section-heading">
         <div>
-          <p class="eyebrow">Make it yours</p>
-          <h2>Fork or clone. Then connect.</h2>
+          <p class="eyebrow">Three steps to your own connectors</p>
+          <h2>Account. Deploy. Connect.</h2>
         </div>
-        <p>The intended home for your instance is your own Fulcra subdomain.</p>
+        <p>
+          The reference page supplies the template and guides. Your own site runs your connectors.
+        </p>
       </div>
       <div class="setup-steps">
         <article>
           <span class="step-number">01</span>
-          <h3>Fork or clone</h3>
+          <h3>Create or connect your Fulcra account</h3>
           <p>
-            Fork <a href={repo}>ashfulcra/connectors-webapp</a> to keep your changes and contribute them
-            back. Or clone it for a local checkout.
+            Start at <a href={accountUrl}>fulcra.ai</a>, or share that link with your agent and ask
+            it to connect you. Complete account creation or sign-in in the browser when prompted.
           </p>
-          <p class="notice">
-            The source is public and MIT licensed. Fork it, then work from <code>main</code>.
+          <p>
+            Use the same Fulcra account for your own agents. For company imports, agree which
+            company-owned account will own the deployment first.
           </p>
-          <pre aria-label="Clone and run the preview"><code
-              >git clone --branch main \
-  https://github.com/ashfulcra/connectors-webapp.git
-cd connectors-webapp
-npm ci
-npm run dev</code
-            ></pre>
-          <p class="small">
-            Use Node 24 or later. New clones use a minimal login; connecting accounts needs your own
-            instance setup.
-          </p>
+          <a class="text-link" href={accountUrl}>Get started with Fulcra ↗</a>
         </article>
         <article>
           <span class="step-number">02</span>
-          <h3>Set up your Fulcra home</h3>
+          <h3>Have your coding agent deploy your copy</h3>
           <p>
-            Choose your own <code>[subdomain].my.fulcra.ai</code> and deploy through Fulcra using
-            the <a href="/guides/setup.md">setup guide</a>. Each instance gets its own owner,
-            credentials and configuration.
+            Give it this template URL and the <a
+              href="#agent-setup"
+              onclick={() => (promptOpen = true)}>setup prompt above</a
+            >. It can fork or clone the repository, check the tools and deploy to your chosen
+            <code>[name].my.fulcra.ai</code>.
           </p>
           <p>
-            Fulcra stores your imported records and files. The deploy script initializes native
-            operational state and background scheduling with your app. It also reuses an
-            already-parked namespace and checks its build/runtime settings.
-          </p>
-          <pre aria-label="Deploy your own instance"><code
-              >cp .env.example .env
-fulcra-api auth login
-node scripts/harness.mjs init
-node scripts/init-env.mjs
-FULCRA_PROJECT_NAME=your-name \
-FULCRA_EXPECTED_DOMAIN=your-name.my.fulcra.ai \
-node scripts/deploy.mjs</code
-            ></pre>
-          <p class="small">
-            Install the Fulcra CLI first. Replace <code>your-name</code> with your namespace.
-            Preserve private configuration on future deploys; see the
-            <a href="/guides/setup.md">full setup and recovery instructions</a>.
+            Use a coding agent with terminal and deployment tools. Your copy gets its own owner,
+            credentials and configuration. Fulcra hosting includes the native backing and background
+            scheduling.
           </p>
           <p class="notice">
-            No separate database account or cron setup is needed for the native backend. Reviewed
-            distribution and a second-owner clean-clone check are still pending; see the <a
-              href="/guides/hosting-and-storage.md">hosting guide</a
-            >.
+            This site includes <a href={`${repo}/pull/5`}>preview features awaiting review</a>.
+            Follow the <a href="/guides/setup.md">current checkout and deployment instructions</a>;
+            <code>main</code> remains the reviewed baseline. Keep your own fork as the push destination.
           </p>
+          <a class="text-link" href="/guides/setup.md">Clone and deploy instructions ↗</a>
         </article>
         <article>
           <span class="step-number">03</span>
-          <h3>Use your instance</h3>
+          <h3>Sign in on your own site and connect a service</h3>
           <p>
-            Open <code>/app</code> on your deployment and sign in as its owner. Authorize background access,
-            connect a service, and select a small set of sources.
+            Open <code>https://[name].my.fulcra.ai/app</code> after deployment and sign in as its owner.
+            Follow the provider guide to authorize access with the required API key, token or OAuth flow.
           </p>
           <p>
-            Choose a Fulcra folder, a compatible v1 data type, or both. Review a bounded preview
-            before enabling collection.
+            Authorize background Fulcra access, select exact sources, and choose the destination,
+            history and interval. Review the preview and enable the collection you want.
           </p>
           <p>
-            Check the first import and an update in Fulcra. Use the workspace to pause, retry, or
-            disconnect. Nothing starts collecting just because you cloned the app.
+            Check a real import and update in Fulcra. API access, permissions and provider limits
+            determine what a connector can do. You control pause, retry and disconnect from your own
+            site.
           </p>
-          <a class="text-link" href="/app">Open this instance’s workspace ↗</a>
+          <a class="text-link" href="/guide#use"
+            >Connect a service on your copy ↗</a
+          >
+        </article>
+      </div>
+    </section>
+
+    <section id="knowledge" class="build">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">Optional add-on</p>
+          <h2>Turn connected sources into company knowledge.</h2>
+        </div>
+      </div>
+      <p class="guide-entry">
+        The Company Knowledge Skill helps your agent find the right source, understand who maintains
+        it, and check gaps or stale information. It works with accounts already connected to Fulcra,
+        and can also discover this app’s folders and verified indexes. Each works on its own;
+        together they use associated source pointers.
+      </p>
+      <p class="guide-entry">
+        A company-owned Fulcra account can hold company imports and the shared map while members
+        keep their own connectors and contribute through narrowly shared streams. Each app has one
+        verified owner. <a
+          href="https://github.com/ashfulcra/fulcra-tools/blob/main/skills/map-our-team/references/setup.md"
+          >Set up the company and member pattern ↗</a
+        >. <a href="/guides/company-onboarding.md">Connector deployment details (Markdown) ↗</a>
+      </p>
+      <div class="build-grid">
+        <article>
+          <h3>Add the knowledge skill</h3>
+          <p>
+            Install <a
+              href="https://github.com/ashfulcra/fulcra-tools/tree/main/skills/map-our-team"
+              >map-our-team from Fulcra Tools</a
+            > in your agent, then ask it to map your authorized company sources.
+          </p>
+          <pre aria-label="Install the optional Company Knowledge Skill"><code
+              >npx skills add ashfulcra/fulcra-tools --skill map-our-team</code
+            ></pre>
+          <p>
+            It adopts verified source pointers into a steward-owned team map. You can use it without
+            deploying this connector app; no duplicate import or new access grant is implied.
+          </p>
+          <a class="text-link" href="/guides/knowledge-sources.md"
+            >How storage and source discovery work ↗</a
+          >
+        </article>
+        <article>
+          <h3>Automatic sync, optional reasoning</h3>
+          <p>
+            Connectors keep collecting and updating their navigation indexes without an agent. The
+            skill adds source-aware research and synthesis; it does not edit connector state or
+            write summaries back into two-way working documents.
+          </p>
+          <p>
+            Consolidating useful knowledge is sometimes called “dreaming.” Use a scheduled task in
+            Codex or Claude with the knowledge skill. Each installer chooses the sources, output,
+            one writer and cadence; installing the skill starts no schedule.
+          </p>
+          <a class="text-link" href="/guides/knowledge-maintenance.md"
+            >Set up scheduled knowledge maintenance ↗</a
+          >
         </article>
       </div>
     </section>
@@ -225,7 +308,7 @@ node scripts/deploy.mjs</code
       </div>
       <p class="guide-entry">
         Start with the <a href="/guide">user guide</a> or give your coding agent the
-        <a href="/guides/agent.md">agent instructions (Markdown)</a>. All five adapters are
+        <a href="/guides/agent.md">agent instructions (Markdown)</a>. All seven adapters are
         implemented in the template; run their synthetic fixtures with
         <code>npm run test:examples</code>.
       </p>
@@ -269,8 +352,8 @@ node scripts/deploy.mjs</code
               Open a pull request to the main project’s <code>main</code> branch for review.
             </li>
             <li>
-              Include setup instructions, test evidence and known limits. Maintainers review
-              connectors before they join the template.
+              Include setup instructions, test evidence and known limits. Fulcra organization
+              members review and merge connectors before they join the template.
             </li>
           </ol>
           <a class="text-link" href="/guides/contributing.md">Read the contribution guide ↗</a>
@@ -278,13 +361,16 @@ node scripts/deploy.mjs</code
       </div>
     </section>
     <section class="closing">
-      <p class="eyebrow">Your data has a home</p>
-      <h2>Fulcra is the database.</h2>
+      <h2>Your data should be yours.</h2>
+      <p>
+        Fulcra is the home for all of your data, under your control, accessible to the agents and
+        collaborators you choose.
+      </p>
       <p>
         Structured imports go into v1 data types. Documents go into folders. Your connector app
         brings them together, under your account, on a schedule you control.
       </p>
-      <a class="button primary" href="#get-started">Start with the template ↑</a>
+      <a class="button primary" href="#get-started">Set up your own connectors ↑</a>
     </section>
   </main>
   <footer>
@@ -292,12 +378,46 @@ node scripts/deploy.mjs</code
     <div>
       <a href={repo}>Source ↗</a><a href="/guides/contributing.md">Contribute ↗</a><a
         href="https://docs.fulcradynamics.com">Fulcra docs ↗</a
-      ><a href="/login">Owner sign in</a>
+      ><a href={accountUrl}>Fulcra account setup ↗</a>
     </div>
   </footer>
 </div>
 
 <style>
+  .agent-setup {
+    margin: 1rem 0 1.5rem;
+    max-width: 850px;
+  }
+  .agent-setup summary {
+    cursor: pointer;
+    color: var(--teal);
+    font-weight: 650;
+  }
+  .agent-setup p {
+    color: var(--muted);
+    margin-top: 1rem;
+  }
+  .agent-setup textarea {
+    display: block;
+    width: 100%;
+    margin-top: 1rem;
+    padding: 1rem;
+    border: 1px solid #52615c;
+    border-radius: 8px;
+    background: #0d1113;
+    color: #f2f4f1;
+    font:
+      0.9rem/1.5 ui-monospace,
+      monospace;
+    resize: vertical;
+  }
+  .copy-status:empty {
+    display: none;
+  }
+  button.button {
+    font: inherit;
+    cursor: pointer;
+  }
   .landing {
     margin: -12px;
     background: #14171a;
@@ -618,10 +738,6 @@ node scripts/deploy.mjs</code
     padding-left: 12px;
     font-size: 12px;
     color: #a9b8b3;
-  }
-  .setup-steps .small {
-    font-size: 12px;
-    color: var(--muted);
   }
   .text-link {
     display: inline-block;

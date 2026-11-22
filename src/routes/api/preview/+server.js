@@ -6,6 +6,7 @@ import { getProviderCredential } from '$lib/server/credentials';
 import { seal } from '$lib/server/secrets';
 import { adapters } from '$lib/server/connectors';
 import { FulcraClient } from '$lib/server/fulcra';
+import { previewAttio } from '$lib/server/attio-sync/configuration';
 import { validateOutput, validateRoute } from '$lib/server/sync/sinks';
 /** @type {import('./$types').RequestHandler} */
 export async function POST(event) {
@@ -15,12 +16,15 @@ export async function POST(event) {
   if (!connection.config.route) error(400, 'Save source and destination configuration first');
   return configurationAction(async () => {
     const credential = await getProviderCredential(store, connection.id, crypto);
-    const result = await previewConnection(
-      connection,
-      adapters[/** @type {keyof typeof adapters} */ (connection.connector)],
-      credential,
-      owner.userId
-    );
+    const result =
+      connection.connector === 'attio' && connection.config.attio?.twoWay
+        ? await previewAttio(connection, credential, owner.userId)
+        : await previewConnection(
+            connection,
+            adapters[/** @type {keyof typeof adapters} */ (connection.connector)],
+            credential,
+            owner.userId
+          );
     if (result.complete) {
       const route = connection.config.route,
         client = new FulcraClient({

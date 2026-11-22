@@ -13,6 +13,7 @@ export async function deployFulcra({
   expectedDomain,
   values,
   accessToken,
+  expectedOwnerId,
   stateFile = '.private/fulcra-deployment.json',
   fetchImpl = fetch,
   run = runVercel
@@ -56,6 +57,11 @@ export async function deployFulcra({
     state = {};
   }
   const api = 'https://api.fulcradynamics.com';
+  if (expectedOwnerId) {
+    const identity = await json(`${api}/user/v1alpha1/info`);
+    if (identity.userid !== expectedOwnerId)
+      throw Error('Deployment token belongs to a different Fulcra account than the configured owner; sign in as the existing owner before deploying');
+  }
   // Check current ownership even on redeploy. Never deploy solely from copied metadata.
   const projects = await json(`${api}/user/v1/deploy/project`);
   if (!Array.isArray(projects)) throw Error('Unexpected owned project list');

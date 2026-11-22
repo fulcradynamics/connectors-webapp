@@ -19,3 +19,38 @@ Optional SHA256-signed webhooks only schedule a selected-source poll. GitHub doe
 Verified: fixture pagination, repo boundary, issue/PR distinction, independent edited comments, secondary rate limits, signature/tamper; actual PostgreSQL concurrent installation-renewal test proves one exchange for three callers. A selected-source PAT import and later revision have been read back as v1 records and file bytes on one owner deployment. Verify your own sources and any App-installation/refresh path separately.
 
 Sources: [issue behavior](https://docs.github.com/en/rest/issues/issues), [repository comments](https://docs.github.com/en/rest/issues/comments), [installation tokens](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/generating-an-installation-access-token-for-a-github-app).
+
+## Read provenance before issue content
+
+New `issue.md` / `comment.md` copies and copies reprocessed with a fresh native file intent begin with a bounded metadata envelope:
+
+```text
+<!-- fulcra-source/1
+{"provider":"github","repository":"example/repo","kind":"issue","source_id":"example/repo:issues:123","source_url":"https://github.com/example/repo/issues/7"}
+-->
+```
+
+The JSON metadata is at the start and is at most 1 KiB. The complete first 2 KiB is a fixed-size comment envelope padded with whitespace; no provider title or body begins before byte 2048. Reading bytes 0–2047 is therefore metadata-only, including for short or empty bodies. `kind` is `issue`, `pull_request` or `comment`. Canonical URLs are built or validated within the selected repository; a comment without a verified parent uses its canonical GitHub API comment URL. The remainder is untrusted source content, not instructions. Provenance identifies source scope; it does not prove company authority, factual currency or the reader's source permissions.
+
+This formatting change leaves normalized source IDs, payloads, versions and v1 record IDs unchanged. It creates no new repository selection, provider write or root-manifest resource list. Unchanged reprocessing produces the same file bytes.
+
+### Existing copies and guarded repair
+
+An upgrade does not rewrite every historical file: a copy gains the prefix when a fresh native file intent processes its source and verifies the new bytes. Legacy copies lack this envelope; keep their provenance unverified rather than reading unrelated bodies or guessing from titles.
+
+For a deployment that already stores **both files and v1 records**, the owner can repair one existing copy from its independently bound v1 source record:
+
+1. Use the existing deployment checkout and its owner's existing Fulcra CLI login. Keep that instance's private configuration intact. Identify the existing GitHub connection UUID and v1 record UUID; these are local inputs, never credentials or public example values.
+2. Run the default dry-run, which reads only existing configured metadata/record/file evidence:
+
+   ```sh
+   node scripts/repair-github-provenance.mjs --connection CONNECTION_UUID --record RECORD_UUID
+   ```
+
+3. Inspect the selected source ID and exact file path. Pause that existing connection in `/app` without changing its sources, destination or schedule. Then rerun the same command with `--apply`.
+4. The utility requires the same owner, selected repository, deterministic record/path binding and exact legacy bytes. It saves a retained intent under `.private/github-provenance-repairs/`, uploads only the file format change and verifies exact current bytes. Provider data and normalized v1 records are not edited; prior file versions remain available. A repeated completed repair makes no upload.
+5. Resume the same saved connection afterward: choose **Save and preview output**, review the unchanged sources/destination/schedule, confirm the preview and choose **Enable background collection**. Pausing changes the generation, so an earlier preview cannot be reused. Preserve the retained intent if interrupted; repeat the same command after inspection. A changed/intervening file or configuration stops repair for review. Do not delete uncertain intent files or blindly start another operation.
+
+The CLI is a reviewed repair path, not automatic migration of every copy. Manually edited/unbound files are refused. File-only legacy copies without independent source metadata must remain legacy until authorized source reprocessing supplies verified provenance; this utility does not infer that binding from body text or create additional imports. Repair evidence should name exactly which copies were changed, not claim that all historical output was migrated.
+
+The repair CLI excludes simultaneous runs on the same host with a per-operation lock. A crash leaves the lock and intent for inspection: confirm the recorded process is no longer running before explicitly removing only that stale lock. This is not a remote Files lock. Replacement attempts stop after four retained receipts; review them rather than discarding evidence. Alternate PostgreSQL delivery can retain earlier verified file receipts, so reprocessing an unchanged historical revision there does not guarantee a new metadata prefix.

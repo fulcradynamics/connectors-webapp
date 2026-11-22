@@ -58,6 +58,17 @@ export async function connectorRequest(
           ...init,
           headers: { ...init.headers, 'X-Command-ID': commandId }
         });
+        if (
+          response.status >= 500 &&
+          attempt === 0 &&
+          ((init.method ?? 'GET') === 'GET' ||
+            /^\/api\/connections\/[a-f0-9-]{36}\/documents(?:\?|$)/i.test(path))
+        ) {
+          // Document mutations require the deduplicated Workflow backend. Other writes may not.
+          await response.body?.cancel();
+          await delay(300);
+          continue;
+        }
         break;
       } catch (e) {
         if (attempt === 1) throw e;

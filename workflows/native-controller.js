@@ -4,6 +4,7 @@ import {
   publishState,
   replyToCommand,
   startSuccessor,
+  wakeSuccessor,
   workPhase,
   sendCommand,
   operationFailure,
@@ -32,6 +33,9 @@ export async function nativeController(state, token) {
                   ...Object.values(state.connections)
                     .filter((/** @type {any} */ c) => c.status === 'ready' && c.nextDue !== null)
                     .map((/** @type {any} */ c) => c.nextDue),
+                  state.grants?.fulcra?.status === 'ready'
+                    ? (state.knowledgeSources?.nextDue ?? Date.now() + 60000)
+                    : Date.now() + 3600000,
                   state.probe?.dueAt ?? Date.now() + 3600000
                 ) - Date.now()
               )
@@ -68,6 +72,7 @@ export async function nativeController(state, token) {
   state.epoch++;
   const nextRunId = await startSuccessor(state, token);
   await publishState(state, nextRunId);
+  await wakeSuccessor(nextRunId);
   return { nextRunId };
 }
 /** @param {string} token @param {string} id @param {any} envelope */

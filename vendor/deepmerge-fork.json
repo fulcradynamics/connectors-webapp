@@ -1,0 +1,54 @@
+{
+  "id": "@fulcra-security/deepmerge@1.0.2",
+  "name": "@fulcra-security/deepmerge",
+  "version": "1.0.2",
+  "size": 8253,
+  "unpackedSize": 31495,
+  "shasum": "1faa00e0e7632a9edbc01d6c68e9fd5a6c0025b0",
+  "integrity": "sha512-bA1csHUjWXnw1ag9K8vsbl2q9Hvnyz4sfFOExeL8EQBT8QXgI4UVwlDpxV8hSPFopfrfUuzbSJeFHDYHLfs9gw==",
+  "filename": "fulcra-security-deepmerge-1.0.2.tgz",
+  "files": [
+    {
+      "path": "changelog.md",
+      "size": 9785,
+      "mode": 420
+    },
+    {
+      "path": "dist/cjs.js",
+      "size": 4302,
+      "mode": 420
+    },
+    {
+      "path": "dist/umd.js",
+      "size": 4670,
+      "mode": 420
+    },
+    {
+      "path": "index.d.ts",
+      "size": 823,
+      "mode": 420
+    },
+    {
+      "path": "index.js",
+      "size": 3550,
+      "mode": 420
+    },
+    {
+      "path": "license.txt",
+      "size": 1116,
+      "mode": 420
+    },
+    {
+      "path": "package.json",
+      "size": 1567,
+      "mode": 420
+    },
+    {
+      "path": "readme.md",
+      "size": 5682,
+      "mode": 420
+    }
+  ],
+  "entryCount": 8,
+  "bundled": []
+}

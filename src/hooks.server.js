@@ -3,7 +3,7 @@ import { env } from '$env/dynamic/private';
 import { requireOwner } from '$lib/server/owner';
 import { instanceMode, personalAccess } from '$lib/server/instance-access';
 import { personalLanding } from '$lib/server/personal-landing';
-/** @type {import('@sveltejs/kit').Handle} */
+/** @type {import('@sveltejs/kit/hooks').Handle} */
 export async function handle({ event, resolve }) {
   if (instanceMode(env.CONNECTORS_MODE) === 'personal') {
     const response = await personalAccess(event, { landing: personalLanding });

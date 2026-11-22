@@ -2,7 +2,7 @@ import { json, error } from '@sveltejs/kit';
 import { ownerRuntime, bodyJSON, configurationAction } from '$lib/server/api';
 import { adapters } from '$lib/server/connectors';
 import { seal } from '$lib/server/secrets';
-import { githubInstallationCredential } from '$lib/server/connectors/github-auth';
+import { enrollProviderCredential } from '$lib/server/provider-enrollment';
 /** @type {import('./$types').RequestHandler} */
 export async function GET(event) {
   const { store } = await ownerRuntime(event);
@@ -20,13 +20,14 @@ export async function POST(event) {
   if (typeof input.label !== 'string' || !input.label.trim() || input.label.length > 100)
     error(400, 'Choose a connection label');
   return configurationAction(async () => {
-    const credential = await githubInstallationCredential(input.credential ?? {});
-    const validated = await adapter.validate(credential);
-    if (!validated.accountId) error(400, 'A stable source account ID is required');
+    const { credential, accountId } = await enrollProviderCredential(
+      input.connector,
+      input.credential ?? {}
+    );
     const connection = await store.createConnection({
       connector: input.connector,
       label: input.label.trim(),
-      accountId: validated.accountId,
+      accountId,
       config: {}
     });
     const key = 'provider:' + connection.id;

@@ -65,3 +65,40 @@ it('reserves a control/error path when cached results reach capacity', async () 
   expect(state.commands.pause.result).toBeTruthy();
   expect(Object.values(state.commands).some((/** @type {any} */ x) => x.expired)).toBe(true);
 });
+
+it('retains 1000 compact Attio discoveries while enforcing connector-specific budgets before mutation', async () => {
+  const state = freshState('deployment', 'owner'),
+    store = nativeStore(state);
+  const c = await store.createConnection({
+    connector: 'attio',
+    label: 'test',
+    accountId: 'synthetic',
+    config: {}
+  });
+  const rows = Array.from({ length: 1000 }, (_, i) => ({
+    id: `00000000-0000-4000-8000-000000000001:00000000-0000-4000-8000-${String(i).padStart(12, '0')}`,
+    name: 'Synthetic '.repeat(100),
+    kind: 'record',
+    extra: 'not cached'
+  }));
+  await store.saveResources(c.id, rows);
+  const cached = await store.getResources(c.id);
+  expect(cached).toHaveLength(1000);
+  expect(cached[0].name.length).toBeLessThanOrEqual(48);
+  expect(cached[0].extra).toBeUndefined();
+  const before = JSON.stringify(state.resources);
+  await expect(
+    store.saveResources(
+      c.id,
+      Array.from({ length: 201 }, (_, i) => ({ id: 'extra' + i, name: 'Synthetic' }))
+    )
+  ).rejects.toThrow('capacity');
+  expect(JSON.stringify(state.resources)).toBe(before);
+  const other = await store.createConnection({
+    connector: 'github',
+    label: 'other',
+    accountId: 'synthetic',
+    config: {}
+  });
+  await expect(store.saveResources(other.id, rows)).rejects.toThrow('capacity');
+});

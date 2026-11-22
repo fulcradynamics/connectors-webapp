@@ -1,4 +1,4 @@
-import { error } from '@sveltejs/kit';
+import { error, isHttpError } from '@sveltejs/kit';
 import { requireOwner } from './owner';
 import { runtime, sameOrigin } from './runtime';
 /** @param {any} event @param {boolean} mutate */
@@ -7,11 +7,12 @@ export async function ownerRuntime(event, mutate = false) {
   if (mutate) sameOrigin(event.request, event.url);
   return { ...runtime(), owner };
 }
-/** @param {Request} request @param {{allowEmpty?:boolean}} [options] */
-export async function bodyJSON(request, { allowEmpty = false } = {}) {
-  if (Number(request.headers.get('content-length')) > 32000) error(413, 'Configuration too large');
+/** @param {Request} request @param {{allowEmpty?:boolean,maxBytes?:number}} [options] */
+export async function bodyJSON(request, { allowEmpty = false, maxBytes = 32000 } = {}) {
+  if (Number(request.headers.get('content-length')) > maxBytes)
+    error(413, 'Configuration too large');
   const text = await request.text();
-  if (text.length > 32000) error(413, 'Configuration too large');
+  if (Buffer.byteLength(text) > maxBytes) error(413, 'Configuration too large');
   try {
     return allowEmpty && !text.trim() ? {} : JSON.parse(text);
   } catch {
@@ -30,10 +31,11 @@ export async function configurationAction(fn) {
   try {
     return await fn();
   } catch (cause) {
+    if (isHttpError(cause)) throw cause;
     error(
       400,
       cause instanceof Error &&
-        /configuration|Select |Choose |preview|authorization|Polling |Invalid |Configuration changed|token|reauthorize|bound/i.test(
+        /configuration|Select |Choose |preview|authorization|Polling |Invalid |Configuration changed|token|reauthorize|bound|Two-way|Document|Conflict|Markdown|Enable |Working|Notion Markdown|Resolve |Attio /i.test(
           cause.message
         )
         ? cause.message

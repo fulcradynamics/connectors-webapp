@@ -98,7 +98,20 @@ try {
       status = 201;
     } else if (path === `/api/connections/${connectionId}/resources`)
       body = {
-        resources: [{ id: 'folder-one', name: 'Marketing meetings', kind: 'folder' }],
+        resources:
+          connections[0]?.connector === 'garmin'
+            ? [
+                { id: 'activities', name: 'Activities (JSON summaries)', kind: 'dataset' },
+                {
+                  id: 'daily',
+                  name: 'Daily summaries (steps, stress, Body Battery)',
+                  kind: 'dataset'
+                },
+                { id: 'sleep', name: 'Sleep', kind: 'dataset' },
+                { id: 'heart_rate', name: 'Heart rate (daily readings)', kind: 'dataset' },
+                { id: 'hrv', name: 'Heart rate variability (HRV)', kind: 'dataset' }
+              ]
+            : [{ id: 'folder-one', name: 'Marketing meetings', kind: 'folder' }],
         nextCursor: null
       };
     else if (path === '/api/destinations/types' && req.method() === 'POST') {
@@ -121,12 +134,20 @@ try {
       body = {
         complete: true,
         writesPerformed: false,
-        outputs: [
-          {
-            record: { payload: { title: 'Synthetic marketing meeting' } },
-            files: [{ path: 'sample/meeting.md' }]
-          }
-        ]
+        hasMore: connections[0]?.connector === 'garmin',
+        detail:
+          connections[0]?.connector === 'garmin'
+            ? 'Checked 4 bounded source pages without finding items. This sample does not cover every selected dataset or history date. Enabling will continue through the remaining history and watch for new data.'
+            : undefined,
+        outputs:
+          connections[0]?.connector === 'garmin'
+            ? []
+            : [
+                {
+                  record: { payload: { title: 'Synthetic marketing meeting' } },
+                  files: [{ path: 'sample/meeting.md' }]
+                }
+              ]
       };
     else if (path === `/api/connections/${connectionId}/action`) {
       const input = req.postDataJSON();
@@ -147,7 +168,8 @@ try {
     ['asana', 'Asana', 'Asana token setup instructions'],
     ['github', 'GitHub', 'GitHub token setup instructions'],
     ['notion', 'Notion', 'Notion connection setup instructions'],
-    ['slack', 'Slack', 'Slack token setup instructions']
+    ['slack', 'Slack', 'Slack token setup instructions'],
+    ['garmin', 'Garmin', 'Garmin Personal API setup instructions']
   ]) {
     await page.getByRole('button', { name: new RegExp(name) }).click();
     assert.equal(await page.getByRole('link', { name: new RegExp(link) }).count(), 1);
@@ -157,8 +179,12 @@ try {
         'Create GitHub fine-grained token',
         'https://github.com/settings/personal-access-tokens/new?name=Fulcra%20Connectors&metadata=read&issues=read&pull_requests=read'
       ],
-      notion: ['Open Notion connection console', 'https://www.notion.so/profile/integrations'],
-      slack: ['Open Slack app and token settings', 'https://api.slack.com/apps']
+      notion: ['Open Notion connection console', 'https://app.notion.com/developers/connections'],
+      slack: ['Open Slack app and token settings', 'https://api.slack.com/apps'],
+      garmin: [
+        'Create or manage Garmin Personal API key',
+        'https://connect.garmin.com/app/settings/personalApiToken'
+      ]
     };
     if (id === 'granola') {
       await page
@@ -293,8 +319,13 @@ try {
       'Create GitHub fine-grained token',
       'https://github.com/settings/personal-access-tokens/new?name=Fulcra%20Connectors&metadata=read&issues=read&pull_requests=read'
     ],
-    ['notion', 'Open Notion connection console', 'https://www.notion.so/profile/integrations'],
-    ['slack', 'Open Slack app and token settings', 'https://api.slack.com/apps']
+    ['notion', 'Open Notion connection console', 'https://app.notion.com/developers/connections'],
+    ['slack', 'Open Slack app and token settings', 'https://api.slack.com/apps'],
+    [
+      'garmin',
+      'Create or manage Garmin Personal API key',
+      'https://connect.garmin.com/app/settings/personalApiToken'
+    ]
   ]) {
     connections[0].connector = id;
     await page.reload();
@@ -314,6 +345,51 @@ try {
     await page.locator('form').getByRole('button', { name: 'Cancel', exact: true }).click();
     evidence.credentialActions.push({ id, href, savedAndReplacement: true });
   }
+  // Garmin must traverse the real shared controls with explicit dataset choices.
+  connections = [];
+  enabled = false;
+  backgroundReady = true;
+  await page.setViewportSize({ width: 1280, height: 1000 });
+  await page.reload();
+  await page.getByRole('button', { name: /Garmin/ }).click();
+  assert.equal(await page.getByLabel('Stable source account ID').count(), 0);
+  await page.getByLabel('Garmin Personal API key').fill('synthetic-personal-key');
+  await page.getByRole('button', { name: 'Verify and continue →' }).click();
+  await page.getByRole('button', { name: 'Discover available datasets' }).click();
+  await page.getByRole('checkbox', { name: /Daily summaries/ }).check();
+  await page.getByRole('checkbox', { name: /Sleep/ }).check();
+  await page.getByRole('button', { name: 'Continue to destination' }).click();
+  assert.equal(await page.getByLabel('Folder path').inputValue(), '/connectors/garmin');
+  await page.getByLabel('Write format').selectOption('both');
+  await page.getByLabel('Recordable v1 data type').selectOption('Event/named');
+  await page.getByRole('button', { name: 'Continue to schedule' }).click();
+  await page.getByLabel('Polling interval (seconds)').fill('1800');
+  await page.getByRole('button', { name: 'Save and preview output' }).click();
+  await page.getByRole('heading', { name: '6. Review and enable' }).waitFor();
+  assert.equal(enabled, false);
+  await page.getByText(/This sample does not cover every selected dataset/).waitFor();
+  assert.deepEqual(saved.resources, ['daily', 'sleep']);
+  assert.equal(saved.intervalSeconds, 1800);
+  assert.equal(saved.route.folder, '/connectors/garmin');
+  assert.equal(saved.route.recordType, 'Event/named');
+  assert.equal(
+    await page.getByRole('button', { name: 'Enable background collection' }).isDisabled(),
+    true
+  );
+  await page.getByRole('checkbox', { name: /I reviewed/ }).check();
+  await page.getByRole('button', { name: 'Enable background collection' }).click();
+  await page.waitForTimeout(200);
+  assert.equal(enabled, true);
+  await page.getByRole('button', { name: 'Replace credential' }).click();
+  assert.ok((await page.locator('form').innerText()).includes('Every 30 minutes'));
+  assert.equal(await page.getByLabel('Garmin Personal API key').inputValue(), '');
+  evidence.garmin = { ...saved, explicitlyEnabled: true, replacementEmptySecret: true };
+  await page.screenshot({ path: '.private/garmin-walkthrough-desktop.png', fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.screenshot({ path: '.private/garmin-walkthrough-mobile.png', fullPage: true });
+  assert.ok(
+    await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)
+  );
   assert.deepEqual(errors, []);
   await writeFile('.private/walkthrough-browser.json', JSON.stringify(evidence, null, 2) + '\n');
   console.log(JSON.stringify(evidence));

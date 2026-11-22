@@ -1,3 +1,4 @@
+import { renderGitHubDocument } from './github-document.js';
 import { providerHTTP, rateAware, selectedResources } from './http.js';
 const headers = { Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2026-03-10' };
 /** @param {{fetchImpl?:typeof fetch}} options */
@@ -74,7 +75,7 @@ export function createGitHub({ fetchImpl = fetch } = {}) {
         files: [
           {
             name: phase === 'comments' ? 'comment.md' : 'issue.md',
-            content: `# ${item.title ?? 'Comment'}\n\n${item.body ?? ''}\n\n${item.html_url ?? ''}`,
+            content: renderGitHubDocument(repo, phase, item),
             contentType: 'text/markdown'
           }
         ]

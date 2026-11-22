@@ -1,4 +1,5 @@
 import { githubInstallationCredential } from './connectors/github-auth.js';
+import { garminPersonalCredential } from './connectors/garmin-auth.js';
 import { seal, unseal } from './secrets.js';
 /** @param {any} store @param {{crypto:{key:string,keyId:string},clientId:string,auth0Domain:string,fetchImpl?:typeof fetch}} options */
 export async function getFulcraCredential(
@@ -55,7 +56,10 @@ export async function getProviderCredential(store, connectionId, crypto, options
       throw new Error('Provider authorization required_configuration');
     const grant = unseal(row.encrypted, context, crypto);
     try {
-      const value = await githubInstallationCredential(grant, options);
+      const value =
+        grant.kind === 'garmin_personal'
+          ? await garminPersonalCredential(grant, options)
+          : await githubInstallationCredential(grant, options);
       return {
         value,
         ...(value !== grant ? { patch: { encrypted: seal(value, context, crypto) } } : {})

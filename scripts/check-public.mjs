@@ -61,8 +61,10 @@ try {
     assert.equal(response.status, 200, `public landing with ${value || 'no cookie'}`);
     const html = await response.text();
     for (const text of [
-      'Fork or clone',
-      'Use your instance',
+      'Your own connectors.',
+      'Account. Deploy. Connect.',
+      'Copy coding-agent setup prompt',
+      'https://fulcra.ai/product/start-for-free',
       'Build a connector',
       'Contribute for review',
       'Granola',
@@ -70,9 +72,10 @@ try {
       'GitHub',
       'Notion',
       'Slack',
-      '/app'
+      'Garmin'
     ])
       assert.ok(html.includes(text), text);
+    assert.doesNotMatch(html, /href=["']\/(?:app|login)["']/, 'no reference login actions');
     for (const text of ['Authorize Fulcra', 'ciphertext', 'test-owner'])
       assert.ok(!html.includes(text), `no private state: ${text}`);
     assert.equal(identityCalls, before, 'public rendering never queries identity');
@@ -84,6 +87,8 @@ try {
     const guide = await fetch(base + '/guide', { headers });
     assert.equal(guide.status, 200, 'public user guide');
     const html = await guide.text();
+    assert.doesNotMatch(html, /href=["']\/(?:app|login)["']/, 'no reference guide login actions');
+    assert.ok(html.includes('/#agent-setup'), 'reference guide links to setup prompt');
     for (const text of [
       'User guide',
       'Agent instructions',
@@ -91,7 +96,8 @@ try {
       'Asana',
       'GitHub',
       'Notion',
-      'Slack'
+      'Slack',
+      'Garmin'
     ])
       assert.ok(html.includes(text), text);
     for (const name of [
@@ -101,7 +107,7 @@ try {
       'setup',
       'contributing',
       'operations',
-      ...['granola', 'asana', 'github', 'notion', 'slack'].map((x) => 'providers/' + x)
+      ...['granola', 'asana', 'github', 'notion', 'slack', 'garmin'].map((x) => 'providers/' + x)
     ]) {
       const response = await fetch(`${base}/guides/${name}.md`, { headers });
       assert.equal(response.status, 200, name);

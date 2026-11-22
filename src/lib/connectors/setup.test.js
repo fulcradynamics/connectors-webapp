@@ -36,7 +36,7 @@ if (setup.setupDefaults) {
     );
   });
   it('provides official credential steps and truthful provider-specific source/backfill/output guidance', () => {
-    for (const id of ['granola', 'asana', 'github', 'notion', 'slack']) {
+    for (const id of ['granola', 'asana', 'github', 'notion', 'slack', 'garmin']) {
       const info = setup.getConnectorSetup(id);
       expect(info.setupUrl).toMatch(/^https:\/\//);
       expect(info.credentialSteps.length).toBeGreaterThan(1);
@@ -58,3 +58,39 @@ if (setup.setupDefaults) {
     expect(() => setup.setupDefaults('unknown')).toThrow(/unsupported/i);
   });
 }
+
+it('links Garmin key creation directly and discloses renewal, dataset, type and cadence semantics', () => {
+  const info = setup.getConnectorSetup('garmin');
+  expect(info.credentialUrl).toBe('https://connect.garmin.com/app/settings/personalApiToken');
+  expect(info.credentialSteps.join(' ')).toContain('once-displayed');
+  expect(info.credentialSteps.join(' ')).toContain('expiration');
+  expect(info.output).toContain('v1 Event');
+  expect(info.backfillHelp).toContain('7 calendar days');
+  expect(info.limitations).toContain('expired/revoked');
+  expect(setup.setupDefaults('garmin').folder).toBe('/connectors/garmin');
+});
+
+it('provides Attio native token creation, explicit selected-field writes and connector-only bounds', () => {
+  expect(setup.getSourceLimit('attio')).toBe(1000);
+  for (const connector of ['notion', 'github', 'garmin', 'granola', 'asana', 'slack'])
+    expect(setup.getSourceLimit(connector)).toBe(50);
+  const info = setup.getConnectorSetup('attio');
+  expect(info.credentialUrl).toBeNull();
+  expect(info.credentialNote).toContain('Workspace settings');
+  expect(info.credentialSteps.join(' ')).toContain('Create access token');
+  expect(info.credentialSteps.join(' ')).toContain('click Save');
+  expect(info.setupUrl).toBe('https://attio.com/help/reference/apps/generating-an-api-key');
+  expect(info.scopes).toContain('record_permission:read-write');
+  expect(info.scopes).toContain('note:read-write');
+  expect(info.output).toContain('API text projection');
+  expect(info.limitations).toContain('original rich note');
+  expect(info.sourceHelp).toContain('exact');
+  expect(setup.setupDefaults('attio', {}, Date.parse('2026-11-02T12:00:00Z'))).toMatchObject({
+    folder: '/connectors/attio',
+    intervalSeconds: 300,
+    backfillSince: '2026-10-03T12:00:00.000Z'
+  });
+  expect(
+    setup.setupDefaults('attio', { backfillSince: '2026-09-01T00:00:00Z' }).backfillSince
+  ).toBe('2026-09-01T00:00:00Z');
+});

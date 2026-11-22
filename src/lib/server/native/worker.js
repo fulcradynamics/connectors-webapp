@@ -1,3 +1,6 @@
+import { advanceKnowledgeSources, knowledgeSourcesPath } from '../knowledge-sources.js';
+import { advanceAttioSync } from '../attio-sync/worker.js';
+import { advanceNotionSync } from '../notion-sync/worker.js';
 import { env as privateEnv } from '$env/dynamic/private';
 import { env as publicEnv } from '$env/dynamic/public';
 import { stage, unstage, nativeStore } from './state.js';
@@ -48,7 +51,21 @@ export async function advanceWorker(state, dependencies = {}) {
     }
     return state;
   }
+  const clientFor = () =>
+    dependencies.client ??
+    new FulcraClient({
+      endpoint: publicEnv.PUBLIC_FULCRA_API_ENDPOINT,
+      accessToken: unseal(grant.encrypted, `${state.deploymentId}:${state.ownerId}:fulcra`, crypto)
+        .access_token,
+      deadline: Date.now() + 25000
+    });
   if (!state.active) {
+    try {
+      knowledgeSourcesPath(state);
+      if (await advanceKnowledgeSources(state, { crypto, client: clientFor() })) return state;
+    } catch {
+      /* Discovery is optional; legacy runners and ordinary ingestion remain independent. */
+    }
     const c = /** @type {any[]} */ (Object.values(state.connections))
       .filter((c) => c.status === 'ready' && c.nextDue !== null && c.nextDue <= Date.now())
       .sort((a, b) => a.nextDue - b.nextDue)[0];
@@ -93,20 +110,14 @@ export async function advanceWorker(state, dependencies = {}) {
     state.active = null;
   };
   try {
-    const client =
-      dependencies.client ??
-      new FulcraClient({
-        endpoint: publicEnv.PUBLIC_FULCRA_API_ENDPOINT,
-        accessToken: unseal(
-          grant.encrypted,
-          `${state.deploymentId}:${state.ownerId}:fulcra`,
-          crypto
-        ).access_token,
-        deadline: Date.now() + 25000
-      });
+    const client = clientFor();
     const provider =
       dependencies.provider ??
       ((/** @type {any} */ connection) => getProviderCredential(store, connection.id, crypto));
+    if (c.connector === 'notion' && c.config.twoWay?.enabled)
+      return advanceNotionSync(state, c, { crypto, client, provider, notion: dependencies.notion });
+    if (c.connector === 'attio' && c.config.attio?.twoWay)
+      return advanceAttioSync(state, c, { crypto, client, provider, api: dependencies.attio });
     if (active.phase === 'read') {
       if (cp.pending) {
         try {

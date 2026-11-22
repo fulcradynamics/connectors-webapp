@@ -1,6 +1,6 @@
 # Security
 
-Report vulnerabilities through [GitHub private vulnerability reporting](https://github.com/ashfulcra/connectors-webapp/security/advisories/new). Do not include tokens, private records or meeting links in public issues or PRs.
+Report vulnerabilities through [GitHub private vulnerability reporting](https://github.com/fulcradynamics/connectors-webapp/security/advisories/new). Do not include tokens, private records or meeting links in public issues or PRs.
 
 Each copy belongs to one verified owner. Personal mode protects controls and data APIs. Provider credentials and unattended Fulcra grants are encrypted server-side; encryption keys remain in server environment variables. Public Auth0 client settings identify the login application and are not secrets.
 

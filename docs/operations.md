@@ -27,3 +27,7 @@ For key rotation, keep old keys in `CREDENTIAL_PREVIOUS_KEYS`, deploy the new ac
 ## Optional PostgreSQL worker
 
 Only `CONNECTORS_BACKEND=postgres` requires a managed TLS database and independent scheduler. Run migrations deliberately. It uses atomic claims, bounded leases and generation fencing; stale workers cannot commit checkpoints. Test it with an isolated `TEST_DATABASE_URL`, never production.
+
+Optional discovery publication retains its upload receipt while waiting for readback and backs off for 30 seconds so source collection can continue. An unavailable navigation manifest must not block ordinary ingestion.
+
+The PostgreSQL delivery path rejects a retained artifact whose expected bytes changed under the same revision/path. An earlier verified receipt is not evidence for different content. Preserve the original delivery receipt and staged candidate, inspect the formatter/source identity change, and use an explicitly reviewed migration when needed; do not delete receipts or advance the checkpoint to bypass the mismatch.

@@ -32,6 +32,6 @@ Auth/routing changes should also run `node scripts/check-public.mjs` and `node s
 
 Explain what changes for users, exact supported data, source boundaries, scopes/tier requirements, tests performed and remaining limits. Use synthetic or sanitized fixtures. Report actual selected-source/import/update/readback checks separately from fixture coverage. A passing fixture does not establish a live provider journey.
 
-No secrets, private account data, meeting links, personal deployment IDs or build diaries in source, screenshots or PR text. Report vulnerabilities privately using [the security policy](SECURITY.md). Maintainers review before merge; users choose when to update their own deployments.
+No secrets, private account data, meeting links, personal deployment IDs or build diaries in source, screenshots or PR text. Report vulnerabilities privately using [the security policy](SECURITY.md). Fulcra organization members review and merge PRs after required checks; users choose when to update their own deployments.
 
 Contributions are under the project's MIT license.

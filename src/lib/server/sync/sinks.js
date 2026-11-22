@@ -45,78 +45,87 @@ export async function deliver(
 ) {
   validateOutput(output, route, schema);
   /** @type {any[]} */ const receipts = [];
-  if (route.mode !== 'record')
-    for (const file of output.files) {
-      if (
-        file.path.startsWith('/') ||
-        file.path.includes('\\') ||
-        file.path.split('/').some((/** @type {string} */ s) => s === '..' || s === '.') ||
-        /%2e|%2f|%5c/i.test(file.path)
-      )
-        throw new Error('Invalid artifact path');
-      const path = route.folder.replace(/\/$/, '') + '/' + file.path;
-      const previous = existing.find((x) => x.sink === 'file' && x.path === path);
-      if (
-        previous &&
-        ['verified', 'pending'].includes(previous.status) &&
-        previous.inputId &&
-        !previous.transfer
-      ) {
-        receipts.push(previous);
+  const plans =
+    route.mode === 'record'
+      ? []
+      : output.files.map((file) => {
+          if (
+            file.path.startsWith('/') ||
+            file.path.includes('\\') ||
+            file.path.split('/').some((/** @type {string} */ s) => s === '..' || s === '.') ||
+            /%2e|%2f|%5c/i.test(file.path)
+          )
+            throw new Error('Invalid artifact path');
+          const path = route.folder.replace(/\/$/, '') + '/' + file.path;
+          const previous = existing.find((x) => x.sink === 'file' && x.path === path);
+          if (previous && previous.hash !== contentHash(file.content))
+            throw new Error(
+              'Artifact content changed for a retained revision; reconcile the original delivery before retry'
+            );
+          return { file, path, previous };
+        });
+  for (const { file, path, previous } of plans) {
+    if (
+      previous &&
+      ['verified', 'pending'].includes(previous.status) &&
+      previous.inputId &&
+      !previous.transfer
+    ) {
+      receipts.push(previous);
+      continue;
+    }
+    const receipt = previous
+      ? { ...previous }
+      : { sink: 'file', path, hash: contentHash(file.content), status: 'uncertain', inputId: '' };
+    await onReceipt(receipt); // Durable intent precedes any remote side effect.
+    if (client.findFileByHash) {
+      let found;
+      try {
+        found = await client.findFileByHash(path, receipt.hash);
+      } catch {
+        receipts.push(receipt);
         continue;
       }
-      const receipt = previous
-        ? { ...previous }
-        : { sink: 'file', path, hash: contentHash(file.content), status: 'uncertain', inputId: '' };
-      await onReceipt(receipt); // Durable intent precedes any remote side effect.
-      if (client.findFileByHash) {
-        let found;
-        try {
-          found = await client.findFileByHash(path, receipt.hash);
-        } catch {
-          receipts.push(receipt);
-          continue;
-        }
-        if (found) {
-          receipt.inputId = found.id;
-          receipt.status = 'verified';
-          delete receipt.transfer;
-          await onReceipt(receipt);
-          receipts.push(receipt);
-          continue;
-        }
+      if (found) {
+        receipt.inputId = found.id;
+        receipt.status = 'verified';
+        delete receipt.transfer;
+        await onReceipt(receipt);
+        receipts.push(receipt);
+        continue;
       }
-      if (client.allocateFile && client.transferFile) {
-        if (!receipt.transfer) {
-          const upload = await client.allocateFile(path, file.content, file.contentType);
-          receipt.inputId = upload.file.id;
-          receipt.transfer = { url: upload.url };
-          receipt.status = 'uncertain';
-          await onReceipt(receipt);
-        }
-        let succeeded = false;
-        try {
-          await client.transferFile(receipt.transfer, file.content, file.contentType);
-          succeeded = true;
-        } catch {
-          /* Preserve the allocated ID and encrypted URL for reconciliation/resume. */
-        }
-        if (succeeded) {
-          receipt.status = 'pending';
-          delete receipt.transfer;
-        }
-      } else {
-        try {
-          const upload = await client.uploadFile(path, file.content, file.contentType);
-          receipt.inputId = upload.id;
-          receipt.status = 'pending';
-        } catch {
-          receipt.status = 'uncertain';
-        }
-      }
-      receipts.push(receipt);
-      await onReceipt(receipt);
     }
+    if (client.allocateFile && client.transferFile) {
+      if (!receipt.transfer) {
+        const upload = await client.allocateFile(path, file.content, file.contentType);
+        receipt.inputId = upload.file.id;
+        receipt.transfer = { url: upload.url };
+        receipt.status = 'uncertain';
+        await onReceipt(receipt);
+      }
+      let succeeded = false;
+      try {
+        await client.transferFile(receipt.transfer, file.content, file.contentType);
+        succeeded = true;
+      } catch {
+        /* Preserve the allocated ID and encrypted URL for reconciliation/resume. */
+      }
+      if (succeeded) {
+        receipt.status = 'pending';
+        delete receipt.transfer;
+      }
+    } else {
+      try {
+        const upload = await client.uploadFile(path, file.content, file.contentType);
+        receipt.inputId = upload.id;
+        receipt.status = 'pending';
+      } catch {
+        receipt.status = 'uncertain';
+      }
+    }
+    receipts.push(receipt);
+    await onReceipt(receipt);
+  }
   if (route.mode !== 'file') {
     const previous = existing.find((x) => x.sink === 'record' && x.id === output.record.id);
     if (
