@@ -8,7 +8,9 @@ Collection and generated indexes run without an agent. Each instance also publis
 
 Source: [fulcradynamics/connectors-webapp](https://github.com/fulcradynamics/connectors-webapp). Anyone can fork and submit a PR; Fulcra organization members maintain and merge reviewed changes.
 
-Start with the [reference app](https://connectors.my.fulcra.ai), or fork this repo and deploy at `your-name.my.fulcra.ai`.
+The [reference page](https://connectors.my.fulcra.ai) is a copyable template. Start with [Fulcra account onboarding](https://fulcra.ai/product/start-for-free), then give the reference URL and its setup prompt to a coding agent with terminal/deployment tools. It can fork or clone this repository and deploy your own copy at `your-name.my.fulcra.ai`.
+
+Sign in and connect providers **on your own deployed site**. The reference installation is owner-protected. Each copy has independent credentials and configuration; provider setup may use API keys/tokens or OAuth. Review selected sources, destination and schedule, preview and explicitly enable collection.
 
 For a team, use a new company-owned Fulcra account for company imports and the knowledge map; members can keep independent personal connectors and share selected contributions back. Follow [company and member onboarding](docs/company-onboarding.md) for copyable prompts, provider permissions and output audiences, alongside [Fulcra Tools first-time setup](https://github.com/ashfulcra/fulcra-tools/blob/main/docs/team-knowledge-setup.md). Each deployment still has one verified owner; sharing output does not grant app administration or provider writeback.
 

@@ -2,6 +2,14 @@
 
 Use your own Fulcra account and namespace. Each deployment has independent credentials, encryption keys and operational state. Native Workflow persistence/scheduling is bundled through Fulcra hosting; a separate database, cron or Vercel account is not required.
 
+## Start with your Fulcra account
+
+This guide deploys your own copy of the [public connector template](https://connectors.my.fulcra.ai). Create or connect your account through [fulcra.ai](https://fulcra.ai/product/start-for-free), or ask your agent to follow the [current agent onboarding](https://docs.fulcradynamics.com/agent-get-started.txt). Complete the human sign-in/account creation step in your browser.
+
+A coding agent with terminal and deployment tools can follow this guide; a regular chat can explain the steps. A Fulcra connection alone does not install Git, Node, Python or the CLI. Share the reference page's coding-agent setup prompt to carry the instructions over.
+
+The path is **account → deploy your own namespace → sign in on your own site → authorize a provider and preview/enable selected collection**. Reference-instance sign-in does not give another user administration access. Provider credentials belong in the protected form on your deployed copy, never in chat.
+
 The owner can be a personal account or a new company-owned account. For a team, start with [company and member onboarding](company-onboarding.md) and verify which account will own the deployment before authenticating. Members read approved company outputs through Fulcra shares; the app currently has no multi-user administration. Set up member instances separately rather than copying company secrets.
 
 ## Install the tools first

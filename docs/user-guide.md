@@ -1,6 +1,10 @@
 # Use your connectors
 
-Your copy runs at `your-name.my.fulcra.ai`. Sign in at `/login`, then open `/app`.
+The public [reference page](https://connectors.my.fulcra.ai) is a copyable template. Start with [Fulcra account onboarding](https://fulcra.ai/product/start-for-free), or share that link with your agent and ask it to connect you. Complete account creation/sign-in in the browser when prompted.
+
+Next, give a coding agent with terminal and deployment tools the reference URL and its setup prompt. Follow [clone and deployment setup](setup.md) to create your own `your-name.my.fulcra.ai` site. A connected chat alone does not install the CLI or deployment tools.
+
+After deployment, sign in on **your own site** at `https://your-name.my.fulcra.ai/login`, then open `/app`. The reference installation is owner-protected and is not the place to connect your provider accounts. Each copy has its own credentials, configuration and owner. Provider setup may require a token/API key or OAuth authorization, depending on the service.
 
 ## Connect a service
 

@@ -1,4 +1,5 @@
 <script>
+  let { data } = $props();
   const providers = [
     {
       id: 'attio',
@@ -61,7 +62,14 @@
   /></svelte:head
 >
 <div class="guide-page">
-  <header><a href="/">← Fulcra Connectors</a><a href="/app">Open workspace ↗</a></header>
+  <header>
+    <a href="/">← Fulcra Connectors</a>
+    {#if data.personal}
+      <a href="/app">Open workspace ↗</a>
+    {:else}
+      <a href="https://fulcra.ai/product/start-for-free">Fulcra account setup ↗</a>
+    {/if}
+  </header>
   <main>
     <p class="eyebrow">Use it. Extend it. Share it.</p>
     <h1>User guide</h1>
@@ -75,15 +83,29 @@
       ><a href="/guides/adding-a-connector.md">Adapter contract ↗</a>
     </div>
     <aside>
-      <strong>Set up your instance</strong>
-      <p>
-        The deployment script initializes native backing and scheduling without a separate database
-        account. If your workspace says “Setup required,” follow the <a href="/guides/setup.md"
-          >current setup guide</a
-        >. Use the copyable commands in that guide to create or reuse your namespace, initialize
-        fresh private state, and deploy at your own subdomain. The repository is public; anyone can
-        fork it and propose a connector.
-      </p>
+      {#if data.personal}
+        <strong>Use your own connector workspace</strong>
+        <p>
+          You are on your own connector site. <a href="/app">Open your workspace</a> to connect
+          providers, choose sources and review a preview before enabling collection. Browser sign-in
+          and background access are separate. Native backing and scheduling are included; a separate
+          database account is not required. For another deployment, use the public template’s
+          <a href="https://connectors.my.fulcra.ai/#agent-setup">setup prompt</a> and
+          <a href="/guides/setup.md">deployment guide</a>.
+        </p>
+      {:else}
+        <strong>Start with an account, then deploy your own copy</strong>
+        <p>
+          This public reference is a copyable template. Create or connect your account through
+          <a href="https://fulcra.ai/product/start-for-free">fulcra.ai</a>, then give your coding
+          agent
+          <a href="/#agent-setup">the setup prompt</a> and
+          <a href="/guides/setup.md">deployment guide</a>. It needs terminal and deployment tools to
+          create your own <code>[name].my.fulcra.ai</code> site. Sign in and configure providers on that
+          deployed copy. Native backing and scheduling are included; a separate database account is not
+          required.
+        </p>
+      {/if}
     </aside>
     <section aria-labelledby="use">
       <h2 id="use">Use an example connector</h2>
